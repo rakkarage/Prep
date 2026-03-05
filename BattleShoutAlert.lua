@@ -12,7 +12,7 @@ local defaults = {
 
 local db
 local glowActive = false
-local currentGlowButton = nil  -- the actual action button frame we're glowing
+local currentGlowButton = nil -- the actual action button frame we're glowing
 
 -- ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -44,37 +44,70 @@ end
 
 local slotToButtonName = {
     -- Main bar
-    [1]="ActionButton1",[2]="ActionButton2",[3]="ActionButton3",[4]="ActionButton4",
-    [5]="ActionButton5",[6]="ActionButton6",[7]="ActionButton7",[8]="ActionButton8",
-    [9]="ActionButton9",[10]="ActionButton10",[11]="ActionButton11",[12]="ActionButton12",
+    [1] = "ActionButton1",
+    [2] = "ActionButton2",
+    [3] = "ActionButton3",
+    [4] = "ActionButton4",
+    [5] = "ActionButton5",
+    [6] = "ActionButton6",
+    [7] = "ActionButton7",
+    [8] = "ActionButton8",
+    [9] = "ActionButton9",
+    [10] = "ActionButton10",
+    [11] = "ActionButton11",
+    [12] = "ActionButton12",
     -- MultiBarBottomLeft (slots 13-24)
-    [13]="MultiBarBottomLeftButton1",[14]="MultiBarBottomLeftButton2",
-    [15]="MultiBarBottomLeftButton3",[16]="MultiBarBottomLeftButton4",
-    [17]="MultiBarBottomLeftButton5",[18]="MultiBarBottomLeftButton6",
-    [19]="MultiBarBottomLeftButton7",[20]="MultiBarBottomLeftButton8",
-    [21]="MultiBarBottomLeftButton9",[22]="MultiBarBottomLeftButton10",
-    [23]="MultiBarBottomLeftButton11",[24]="MultiBarBottomLeftButton12",
+    [13] = "MultiBarBottomLeftButton1",
+    [14] = "MultiBarBottomLeftButton2",
+    [15] = "MultiBarBottomLeftButton3",
+    [16] = "MultiBarBottomLeftButton4",
+    [17] = "MultiBarBottomLeftButton5",
+    [18] = "MultiBarBottomLeftButton6",
+    [19] = "MultiBarBottomLeftButton7",
+    [20] = "MultiBarBottomLeftButton8",
+    [21] = "MultiBarBottomLeftButton9",
+    [22] = "MultiBarBottomLeftButton10",
+    [23] = "MultiBarBottomLeftButton11",
+    [24] = "MultiBarBottomLeftButton12",
     -- MultiBarBottomRight (slots 25-36)
-    [25]="MultiBarBottomRightButton1",[26]="MultiBarBottomRightButton2",
-    [27]="MultiBarBottomRightButton3",[28]="MultiBarBottomRightButton4",
-    [29]="MultiBarBottomRightButton5",[30]="MultiBarBottomRightButton6",
-    [31]="MultiBarBottomRightButton7",[32]="MultiBarBottomRightButton8",
-    [33]="MultiBarBottomRightButton9",[34]="MultiBarBottomRightButton10",
-    [35]="MultiBarBottomRightButton11",[36]="MultiBarBottomRightButton12",
+    [25] = "MultiBarBottomRightButton1",
+    [26] = "MultiBarBottomRightButton2",
+    [27] = "MultiBarBottomRightButton3",
+    [28] = "MultiBarBottomRightButton4",
+    [29] = "MultiBarBottomRightButton5",
+    [30] = "MultiBarBottomRightButton6",
+    [31] = "MultiBarBottomRightButton7",
+    [32] = "MultiBarBottomRightButton8",
+    [33] = "MultiBarBottomRightButton9",
+    [34] = "MultiBarBottomRightButton10",
+    [35] = "MultiBarBottomRightButton11",
+    [36] = "MultiBarBottomRightButton12",
     -- MultiBarRight (slots 37-48)
-    [37]="MultiBarRightButton1",[38]="MultiBarRightButton2",
-    [39]="MultiBarRightButton3",[40]="MultiBarRightButton4",
-    [41]="MultiBarRightButton5",[42]="MultiBarRightButton6",
-    [43]="MultiBarRightButton7",[44]="MultiBarRightButton8",
-    [45]="MultiBarRightButton9",[46]="MultiBarRightButton10",
-    [47]="MultiBarRightButton11",[48]="MultiBarRightButton12",
+    [37] = "MultiBarRightButton1",
+    [38] = "MultiBarRightButton2",
+    [39] = "MultiBarRightButton3",
+    [40] = "MultiBarRightButton4",
+    [41] = "MultiBarRightButton5",
+    [42] = "MultiBarRightButton6",
+    [43] = "MultiBarRightButton7",
+    [44] = "MultiBarRightButton8",
+    [45] = "MultiBarRightButton9",
+    [46] = "MultiBarRightButton10",
+    [47] = "MultiBarRightButton11",
+    [48] = "MultiBarRightButton12",
     -- MultiBarLeft (slots 49-60)
-    [49]="MultiBarLeftButton1",[50]="MultiBarLeftButton2",
-    [51]="MultiBarLeftButton3",[52]="MultiBarLeftButton4",
-    [53]="MultiBarLeftButton5",[54]="MultiBarLeftButton6",
-    [55]="MultiBarLeftButton7",[56]="MultiBarLeftButton8",
-    [57]="MultiBarLeftButton9",[58]="MultiBarLeftButton10",
-    [59]="MultiBarLeftButton11",[60]="MultiBarLeftButton12",
+    [49] = "MultiBarLeftButton1",
+    [50] = "MultiBarLeftButton2",
+    [51] = "MultiBarLeftButton3",
+    [52] = "MultiBarLeftButton4",
+    [53] = "MultiBarLeftButton5",
+    [54] = "MultiBarLeftButton6",
+    [55] = "MultiBarLeftButton7",
+    [56] = "MultiBarLeftButton8",
+    [57] = "MultiBarLeftButton9",
+    [58] = "MultiBarLeftButton10",
+    [59] = "MultiBarLeftButton11",
+    [60] = "MultiBarLeftButton12",
 }
 -- MultiBar5-7 (TWW+)
 for i = 1, 12 do
@@ -103,22 +136,17 @@ end
 
 local function ApplyGlow(button)
     if not button then return end
-    ActionButton_ShowOverlayGlow(button)
-    -- Tint overlay red (default is yellow/gold)
-    if button.overlay then
-        button.overlay:SetVertexColor(1, 0.1, 0.1, 1)
-    end
+    button.SpellHighlightTexture:Show()
+    button.SpellHighlightTexture:SetAlpha(1)
+    button.SpellHighlightTexture:SetVertexColor(1, 0.1, 0.1)
+    button.Flash:Show()
     currentGlowButton = button
     glowActive = true
 end
 
 local function RemoveGlow()
     if currentGlowButton then
-        ActionButton_HideOverlayGlow(currentGlowButton)
-        -- Restore default white tint (Blizzard multiplies this with the texture)
-        if currentGlowButton.overlay then
-            currentGlowButton.overlay:SetVertexColor(1, 1, 1, 1)
-        end
+        currentGlowButton.SpellHighlightTexture:Hide()
     end
     currentGlowButton = nil
     glowActive = false
@@ -181,7 +209,8 @@ SlashCmdList["BSALERT"] = function(msg)
     msg = (msg or ""):lower():trim()
     if msg == "combat" then
         db.onlyInCombat = not db.onlyInCombat
-        print("|cff00ccff[BattleShoutAlert]|r Combat-only: " .. (db.onlyInCombat and "|cff00ff00ON|r" or "|cffff4444OFF|r"))
+        print("|cff00ccff[BattleShoutAlert]|r Combat-only: " ..
+        (db.onlyInCombat and "|cff00ff00ON|r" or "|cffff4444OFF|r"))
         ScheduleUpdate()
     elseif msg == "group" then
         db.checkGroup = not db.checkGroup

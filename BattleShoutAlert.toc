@@ -4,6 +4,7 @@
 ## Author: YourName
 ## Version: 1.0.0
 ## SavedVariables: BattleShoutAlertDB
-## IconTexture: Interface\Icons\Spell_Nature_Enchant
+## IconTexture: Interface/Icons/ability_warrior_battleshout
+## AddonCompartmentFunc: MinimapAutoZoom_AddonCompartmentClick
 
 BattleShoutAlert.lua

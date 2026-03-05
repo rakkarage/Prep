@@ -3,9 +3,9 @@
 -- Five fixed slots: buff, food, weapon, flask, rune.
 -- Compatible with WoW: Midnight
 
-local ADDON_NAME       = "BattleShoutAlert"
+local ADDON_NAME    = "BattleShoutAlert"
 
-local defaults         = {
+local defaults      = {
     onlyInCombat = false,
     checkGroup   = true,
     flashAlpha   = 1.0,
@@ -21,98 +21,57 @@ local defaults         = {
 }
 
 local db
-local activeGlows      = {}
-local pendingUpdate    = false
+local activeGlows   = {}
+local pendingUpdate = false
 
--- ─── Slot → Button name map ───────────────────────────────────────────────────
+-- ─── Slot → button frame (AssKey-style, correct for Midnight) ────────────────
 
-local slotToButtonName = {
-    [1] = "ActionButton1",
-    [2] = "ActionButton2",
-    [3] = "ActionButton3",
-    [4] = "ActionButton4",
-    [5] = "ActionButton5",
-    [6] = "ActionButton6",
-    [7] = "ActionButton7",
-    [8] = "ActionButton8",
-    [9] = "ActionButton9",
-    [10] = "ActionButton10",
-    [11] = "ActionButton11",
-    [12] = "ActionButton12",
-    [13] = "MultiBarBottomLeftButton1",
-    [14] = "MultiBarBottomLeftButton2",
-    [15] = "MultiBarBottomLeftButton3",
-    [16] = "MultiBarBottomLeftButton4",
-    [17] = "MultiBarBottomLeftButton5",
-    [18] = "MultiBarBottomLeftButton6",
-    [19] = "MultiBarBottomLeftButton7",
-    [20] = "MultiBarBottomLeftButton8",
-    [21] = "MultiBarBottomLeftButton9",
-    [22] = "MultiBarBottomLeftButton10",
-    [23] = "MultiBarBottomLeftButton11",
-    [24] = "MultiBarBottomLeftButton12",
-    [25] = "MultiBarBottomRightButton1",
-    [26] = "MultiBarBottomRightButton2",
-    [27] = "MultiBarBottomRightButton3",
-    [28] = "MultiBarBottomRightButton4",
-    [29] = "MultiBarBottomRightButton5",
-    [30] = "MultiBarBottomRightButton6",
-    [31] = "MultiBarBottomRightButton7",
-    [32] = "MultiBarBottomRightButton8",
-    [33] = "MultiBarBottomRightButton9",
-    [34] = "MultiBarBottomRightButton10",
-    [35] = "MultiBarBottomRightButton11",
-    [36] = "MultiBarBottomRightButton12",
-    [37] = "MultiBarRightButton1",
-    [38] = "MultiBarRightButton2",
-    [39] = "MultiBarRightButton3",
-    [40] = "MultiBarRightButton4",
-    [41] = "MultiBarRightButton5",
-    [42] = "MultiBarRightButton6",
-    [43] = "MultiBarRightButton7",
-    [44] = "MultiBarRightButton8",
-    [45] = "MultiBarRightButton9",
-    [46] = "MultiBarRightButton10",
-    [47] = "MultiBarRightButton11",
-    [48] = "MultiBarRightButton12",
-    [49] = "MultiBarLeftButton1",
-    [50] = "MultiBarLeftButton2",
-    [51] = "MultiBarLeftButton3",
-    [52] = "MultiBarLeftButton4",
-    [53] = "MultiBarLeftButton5",
-    [54] = "MultiBarLeftButton6",
-    [55] = "MultiBarLeftButton7",
-    [56] = "MultiBarLeftButton8",
-    [57] = "MultiBarLeftButton9",
-    [58] = "MultiBarLeftButton10",
-    [59] = "MultiBarLeftButton11",
-    [60] = "MultiBarLeftButton12",
-}
-for i = 1, 12 do
-    slotToButtonName[144 + i] = "MultiBar5Button" .. i
-    slotToButtonName[156 + i] = "MultiBar6Button" .. i
-    slotToButtonName[168 + i] = "MultiBar7Button" .. i
+local function GetButtonForActionSlot(actionSlot)
+    local btnName
+    if actionSlot <= 12 then
+        btnName = "ActionButton" .. actionSlot
+    elseif actionSlot <= 24 then
+        btnName = "ActionButton" .. (actionSlot - 12)              -- bonus bar (same frames as main)
+    elseif actionSlot <= 36 then
+        btnName = "MultiBarBottomLeftButton" .. (actionSlot - 24)  -- bar 3
+    elseif actionSlot <= 48 then
+        btnName = "MultiBarBottomRightButton" .. (actionSlot - 36) -- bar 4
+    elseif actionSlot <= 60 then
+        btnName = "MultiBarRightButton" .. (actionSlot - 48)       -- bar 5
+    elseif actionSlot <= 72 then
+        btnName = "MultiBarLeftButton" .. (actionSlot - 60)        -- bar 6
+    elseif actionSlot >= 145 and actionSlot <= 156 then
+        btnName = "MultiBar5Button" .. (actionSlot - 144)
+    elseif actionSlot >= 157 and actionSlot <= 168 then
+        btnName = "MultiBar6Button" .. (actionSlot - 156)
+    elseif actionSlot >= 169 and actionSlot <= 180 then
+        btnName = "MultiBar7Button" .. (actionSlot - 168)
+    end
+    if not btnName then return nil end
+    local btn = _G[btnName]
+    if btn and btn:IsVisible() then return btn end
+    return nil
 end
 
 -- ─── Find button on bar ───────────────────────────────────────────────────────
 
 local function FindButtonForSpell(spellID)
-    for slot, btnName in pairs(slotToButtonName) do
-        local actionType, id = GetActionInfo(slot)
+    for actionSlot = 1, 180 do
+        local actionType, id = GetActionInfo(actionSlot)
         if actionType == "spell" and id == spellID then
-            local btn = _G[btnName]
-            if btn and btn:IsVisible() then return btn end
+            local btn = GetButtonForActionSlot(actionSlot)
+            if btn then return btn end
         end
     end
     return nil
 end
 
 local function FindButtonForItem(itemID)
-    for slot, btnName in pairs(slotToButtonName) do
-        local actionType, id = GetActionInfo(slot)
+    for actionSlot = 1, 180 do
+        local actionType, id = GetActionInfo(actionSlot)
         if actionType == "item" and id == itemID then
-            local btn = _G[btnName]
-            if btn and btn:IsVisible() then return btn end
+            local btn = GetButtonForActionSlot(actionSlot)
+            if btn then return btn end
         end
     end
     return nil

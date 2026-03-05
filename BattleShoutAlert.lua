@@ -6,18 +6,17 @@
 local ADDON_NAME    = "BattleShoutAlert"
 
 local defaults      = {
-    onlyInCombat = false,
-    checkGroup   = true,
-    flashAlpha   = 1.0,
-    flashR       = 1.0,
-    flashG       = 0.1,
-    flashB       = 0.1,
+    checkGroup = true,
+    flashAlpha = 1.0,
+    flashR     = 1.0,
+    flashG     = 0.1,
+    flashB     = 0.1,
     -- Each slot stores: { spellID=n } or { itemID=n } or nil if unset
-    slotBuff     = nil,
-    slotFood     = nil,
-    slotWeapon   = nil,
-    slotFlask    = nil,
-    slotRune     = nil,
+    slotBuff   = nil,
+    slotFood   = nil,
+    slotWeapon = nil,
+    slotFlask  = nil,
+    slotRune   = nil,
 }
 
 local db
@@ -112,15 +111,11 @@ local function HasBuff(slot)
     return HasAura(name, db.checkGroup)
 end
 
--- Food: any "Well Fed" variant
+-- Food: check known Well Fed aura names
+local WELL_FED_NAMES = { "Well Fed", "Hearty Well Fed" }
 local function HasFood()
-    for i = 1, 40 do
-        local aura = C_UnitAuras.GetBuffDataByIndex("player", i)
-        if not aura then break end
-        if aura.name then
-            local lower = aura.name:lower()
-            if lower:find("well fed") then return true end
-        end
+    for _, name in ipairs(WELL_FED_NAMES) do
+        if AuraUtil.FindAuraByName(name, "player", "HELPFUL") then return true end
     end
     return false
 end
@@ -131,10 +126,11 @@ local function HasWeaponEnchant()
     return hasEnchant == true or hasEnchant == 1
 end
 
--- Flask: any flask or phial aura
+-- Flask: check known flask/phial aura names by scanning all player buffs
+-- We use C_UnitAuras.GetAuraDataByIndex which is available out of combat
 local function HasFlask()
     for i = 1, 40 do
-        local aura = C_UnitAuras.GetBuffDataByIndex("player", i)
+        local aura = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
         if not aura then break end
         if aura.name then
             local lower = aura.name:lower()
@@ -144,10 +140,10 @@ local function HasFlask()
     return false
 end
 
--- Rune: any augment rune aura
+-- Rune: check known augment rune aura names
 local function HasRune()
     for i = 1, 40 do
-        local aura = C_UnitAuras.GetBuffDataByIndex("player", i)
+        local aura = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
         if not aura then break end
         if aura.name then
             local lower = aura.name:lower()
@@ -206,7 +202,7 @@ local function ScheduleUpdate()
         pendingUpdate = false
         for _, btn in pairs(activeGlows) do RemoveGlow(btn) end
         wipe(activeGlows)
-        if db.onlyInCombat and not InCombatLockdown() then return end
+        if InCombatLockdown() then return end
         for _, check in ipairs(checks) do
             local slot = db[check.key]
             if slot then -- only check if this slot is configured
@@ -333,7 +329,6 @@ local function PrintHelp()
     print("  |cffffff00/bsa flask <item id/name/link>|r - set flask slot")
     print("  |cffffff00/bsa rune <item id/name/link>|r  - set rune slot")
     print("  |cffffff00/bsa clear <buff|food|weapon|flask|rune>|r - clear a slot")
-    print("  |cffffff00/bsa combat|r                  - toggle combat-only mode")
     print("  |cffffff00/bsa group|r                   - toggle group buff check")
     print("  |cffffff00/bsa alpha <0.1-1.0>|r         - set flash alpha")
     print("  |cffffff00/bsa color <r> <g> <b>|r       - set flash color (0-1 each)")
@@ -461,7 +456,6 @@ SlashCmdList["BSALERT"] = function(msg)
         print("  " .. SlotStatus("slotWeapon", "Weapon"))
         print("  " .. SlotStatus("slotFlask", "Flask"))
         print("  " .. SlotStatus("slotRune", "Rune"))
-        print("  Combat-only: " .. tostring(db.onlyInCombat))
         print("  Group check: " .. tostring(db.checkGroup))
         print(string.format("  Flash: alpha=%.2f  color=%.2f/%.2f/%.2f", db.flashAlpha, db.flashR, db.flashG, db.flashB))
     else

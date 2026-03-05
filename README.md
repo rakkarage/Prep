@@ -1,0 +1,5 @@
+# BattleShoutReminder
+
+## Usage
+
+- `/bsr`

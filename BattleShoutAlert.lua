@@ -1,7 +1,6 @@
 -- BattleShoutAlert
--- Glows action bar buttons when tracked buffs are missing.
--- Generic: watch any spell buff or item buff by ID or name.
--- Configuration via slash commands only.
+-- Glows action bar buttons when key buffs are missing.
+-- Five fixed slots: buff, food, weapon, flask, rune.
 -- Compatible with WoW: Midnight
 
 local ADDON_NAME       = "BattleShoutAlert"
@@ -13,10 +12,16 @@ local defaults         = {
     flashR       = 1.0,
     flashG       = 0.1,
     flashB       = 0.1,
+    -- Each slot stores: { spellID=n } or { itemID=n } or nil if unset
+    slotBuff     = nil,
+    slotFood     = nil,
+    slotWeapon   = nil,
+    slotFlask    = nil,
+    slotRune     = nil,
 }
 
 local db
-local activeGlows      = {} -- key -> button frame currently glowing
+local activeGlows      = {}
 local pendingUpdate    = false
 
 -- ─── Slot → Button name map ───────────────────────────────────────────────────
@@ -113,43 +118,19 @@ local function FindButtonForItem(itemID)
     return nil
 end
 
--- ─── Spell name → ID lookup ───────────────────────────────────────────────────
--- Scans the player's spellbook to find a spell ID by name.
-
-local function FindSpellIDByName(searchName)
-    searchName = searchName:lower()
-    local bookType = Enum.SpellBookSpellBank.Player
-    local numSpells = C_SpellBook.GetNumSpellBookSkillLines and
-        select(2, C_SpellBook.GetNumSpellBookSkillLines()) or 0
-
-    -- Scan all spellbook entries
-    for i = 1, 1000 do
-        local info = C_SpellBook.GetSpellBookItemInfo(i, bookType)
-        if not info then break end
-        if info.spellID and info.spellID > 0 then
-            local name = C_Spell.GetSpellName(info.spellID)
-            if name and name:lower() == searchName then
-                return info.spellID
-            end
-        end
-    end
-
-    -- Fallback: try C_Spell.GetSpellIDForSpellIdentifier if available
-    if C_Spell.GetSpellIDForSpellIdentifier then
-        local id = C_Spell.GetSpellIDForSpellIdentifier(searchName)
-        if id and id > 0 then return id end
-    end
-
+local function FindButton(slot)
+    if not slot then return nil end
+    if slot.spellID then return FindButtonForSpell(slot.spellID) end
+    if slot.itemID then return FindButtonForItem(slot.itemID) end
     return nil
 end
 
--- ─── Buff presence checks ────────────────────────────────────────────────────
+-- ─── Buff presence checks ─────────────────────────────────────────────────────
 
-local function PlayerHasAuraFromSpell(spellID)
-    local name = C_Spell.GetSpellName(spellID)
-    if not name then return true end -- unknown, don't false-alarm
+-- Generic: check player (and optionally group) for a named aura
+local function HasAura(name, checkGroup)
     if AuraUtil.FindAuraByName(name, "player", "HELPFUL") then return true end
-    if db.checkGroup then
+    if checkGroup then
         local groupSize = GetNumGroupMembers()
         if groupSize > 0 then
             local prefix = IsInRaid() and "raid" or "party"
@@ -164,28 +145,68 @@ local function PlayerHasAuraFromSpell(spellID)
     return false
 end
 
-local function PlayerHasAuraFromItem(itemID)
-    local itemName = C_Item.GetItemNameByID(itemID)
-    if not itemName then return true end -- not cached yet, don't false-alarm
+-- Buff slot: any spell whose buff name matches the spell name
+local function HasBuff(slot)
+    if not slot or not slot.spellID then return true end
+    local name = C_Spell.GetSpellName(slot.spellID)
+    if not name then return true end -- unknown, don't false-alarm
+    return HasAura(name, db.checkGroup)
+end
+
+-- Food: any "Well Fed" variant
+local function HasFood()
     for i = 1, 40 do
         local aura = C_UnitAuras.GetBuffDataByIndex("player", i)
         if not aura then break end
-        if aura.name and aura.name:lower():find(itemName:lower(), 1, true) then
-            return true
+        if aura.name then
+            local lower = aura.name:lower()
+            if lower:find("well fed") then return true end
         end
     end
     return false
 end
 
-local function ShouldGlow(entry)
-    if db.onlyInCombat and not InCombatLockdown() then return false end
-    if entry.kind == "spell" then
-        return not PlayerHasAuraFromSpell(entry.id)
-    elseif entry.kind == "item" then
-        return not PlayerHasAuraFromItem(entry.id)
+-- Weapon: main hand enchant
+local function HasWeaponEnchant()
+    local hasEnchant = GetWeaponEnchantInfo()
+    return hasEnchant == true or hasEnchant == 1
+end
+
+-- Flask: any flask or phial aura
+local function HasFlask()
+    for i = 1, 40 do
+        local aura = C_UnitAuras.GetBuffDataByIndex("player", i)
+        if not aura then break end
+        if aura.name then
+            local lower = aura.name:lower()
+            if lower:find("flask") or lower:find("phial") then return true end
+        end
     end
     return false
 end
+
+-- Rune: any augment rune aura
+local function HasRune()
+    for i = 1, 40 do
+        local aura = C_UnitAuras.GetBuffDataByIndex("player", i)
+        if not aura then break end
+        if aura.name then
+            local lower = aura.name:lower()
+            if lower:find("rune") or lower:find("augment") then return true end
+        end
+    end
+    return false
+end
+
+-- ─── Checks table ────────────────────────────────────────────────────────────
+
+local checks = {
+    { key = "slotBuff",   label = "Buff",   hasFunc = function() return HasBuff(db.slotBuff) end },
+    { key = "slotFood",   label = "Food",   hasFunc = HasFood },
+    { key = "slotWeapon", label = "Weapon", hasFunc = HasWeaponEnchant },
+    { key = "slotFlask",  label = "Flask",  hasFunc = HasFlask },
+    { key = "slotRune",   label = "Rune",   hasFunc = HasRune },
+}
 
 -- ─── Glow / Flash ────────────────────────────────────────────────────────────
 
@@ -226,14 +247,16 @@ local function ScheduleUpdate()
         pendingUpdate = false
         for _, btn in pairs(activeGlows) do RemoveGlow(btn) end
         wipe(activeGlows)
-        for _, entry in ipairs(db.watchList) do
-            if ShouldGlow(entry) then
-                local btn = entry.kind == "spell"
-                    and FindButtonForSpell(entry.id)
-                    or FindButtonForItem(entry.id)
-                if btn then
-                    ApplyGlow(btn)
-                    activeGlows[entry.label .. entry.id] = btn
+        if db.onlyInCombat and not InCombatLockdown() then return end
+        for _, check in ipairs(checks) do
+            local slot = db[check.key]
+            if slot then -- only check if this slot is configured
+                if not check.hasFunc() then
+                    local btn = FindButton(slot)
+                    if btn then
+                        ApplyGlow(btn)
+                        activeGlows[check.key] = btn
+                    end
                 end
             end
         end
@@ -252,7 +275,6 @@ events:SetScript("OnEvent", function(self, event, arg1)
         for k, v in pairs(defaults) do
             if db[k] == nil then db[k] = v end
         end
-        if not db.watchList then db.watchList = {} end
         self:RegisterEvent("PLAYER_ENTERING_WORLD")
         self:RegisterEvent("PLAYER_REGEN_ENABLED")
         self:RegisterEvent("PLAYER_REGEN_DISABLED")
@@ -271,84 +293,180 @@ events:SetScript("OnEvent", function(self, event, arg1)
     end
 end)
 
+-- ─── Name/link → ID helpers ───────────────────────────────────────────────────
+
+local function FindSpellIDByName(searchName)
+    searchName = searchName:lower()
+    for i = 1, 1000 do
+        local info = C_SpellBook.GetSpellBookItemInfo(i, Enum.SpellBookSpellBank.Player)
+        if not info then break end
+        if info.spellID and info.spellID > 0 then
+            local name = C_Spell.GetSpellName(info.spellID)
+            if name and name:lower() == searchName then
+                return info.spellID
+            end
+        end
+    end
+    if C_Spell.GetSpellIDForSpellIdentifier then
+        local id = C_Spell.GetSpellIDForSpellIdentifier(searchName)
+        if id and id > 0 then return id end
+    end
+    return nil
+end
+
+local function FindItemIDByName(searchName)
+    searchName = searchName:lower()
+    for bag = 0, NUM_BAG_SLOTS do
+        for slot = 1, C_Container.GetContainerNumSlots(bag) do
+            local info = C_Container.GetContainerItemInfo(bag, slot)
+            if info and info.itemID then
+                local name = C_Item.GetItemNameByID(info.itemID)
+                if name and name:lower() == searchName then
+                    return info.itemID
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function ParseItemArg(arg)
+    -- Strip item link: |cff...|Hitem:12345:...|h[Name]|h|r
+    local linkID = arg:match("|Hitem:(%d+):")
+    if linkID then return tonumber(linkID) end
+    -- Strip plain [Name] brackets
+    local bracketed = arg:match("^%[(.+)%]$")
+    if bracketed then arg = bracketed end
+    -- Try numeric
+    local id = tonumber(arg)
+    if id then return id end
+    -- Bag name search
+    return FindItemIDByName(arg)
+end
+
+local function ParseSpellArg(arg)
+    local id = tonumber(arg)
+    if id then return id end
+    return FindSpellIDByName(arg)
+end
+
 -- ─── Slash commands ───────────────────────────────────────────────────────────
+
+local function SlotStatus(key, label)
+    local slot = db[key]
+    if not slot then
+        return label .. ": |cffaaaaaa(not set)|r"
+    elseif slot.spellID then
+        local name = C_Spell.GetSpellName(slot.spellID) or ("spell " .. slot.spellID)
+        return label .. ": |cffffff00" .. name .. "|r (spell " .. slot.spellID .. ")"
+    elseif slot.itemID then
+        local name = C_Item.GetItemNameByID(slot.itemID) or ("item " .. slot.itemID)
+        return label .. ": |cffffff00" .. name .. "|r (item " .. slot.itemID .. ")"
+    end
+    return label .. ": |cffff4444(unknown)|r"
+end
 
 local function PrintHelp()
     print("|cff00ccff[BSA]|r Commands:")
-    print("  |cffffff00/bsa addspell <id or name>|r  - watch a spell buff")
-    print("  |cffffff00/bsa additem <id>|r            - watch an item buff")
-    print("  |cffffff00/bsa remove <id>|r             - stop watching")
-    print("  |cffffff00/bsa list|r                    - show watch list")
+    print("  |cffffff00/bsa buff <spell id/name>|r    - set buff slot (Battle Shout, Arcane Intellect, etc)")
+    print("  |cffffff00/bsa food <item id/name/link>|r - set food slot")
+    print("  |cffffff00/bsa weapon <item id/name/link>|r - set weapon enchant slot")
+    print("  |cffffff00/bsa flask <item id/name/link>|r - set flask slot")
+    print("  |cffffff00/bsa rune <item id/name/link>|r  - set rune slot")
+    print("  |cffffff00/bsa clear <buff|food|weapon|flask|rune>|r - clear a slot")
     print("  |cffffff00/bsa combat|r                  - toggle combat-only mode")
     print("  |cffffff00/bsa group|r                   - toggle group buff check")
     print("  |cffffff00/bsa alpha <0.1-1.0>|r         - set flash alpha")
     print("  |cffffff00/bsa color <r> <g> <b>|r       - set flash color (0-1 each)")
-    print("  |cffffff00/bsa status|r                  - show current settings")
+    print("  |cffffff00/bsa status|r                  - show current config")
 end
 
 SLASH_BSALERT1 = "/bsa"
 SLASH_BSALERT2 = "/battleshout"
 SlashCmdList["BSALERT"] = function(msg)
-    -- preserve original case for name lookup, lower only for cmd
-    local origArg = (msg or ""):match("^%S+%s+(.*)$") or ""
-    msg = (msg or ""):trim()
-    local cmd, arg = msg:match("^(%S+)%s*(.*)$")
+    local origMsg = (msg or ""):trim()
+    local cmd, origArg = origMsg:match("^(%S+)%s*(.*)$")
     cmd = cmd and cmd:lower() or ""
+    local arg = origArg and origArg:lower() or ""
 
-    if cmd == "addspell" then
-        -- Try numeric ID first, then name lookup
-        local id = tonumber(origArg)
-        if not id then
-            -- name lookup
-            local found = FindSpellIDByName(origArg)
-            if found then
-                id = found
-            else
-                print("|cff00ccff[BSA]|r Spell not found in spellbook: |cffffff00" .. origArg .. "|r")
-                print("  Try providing the numeric spell ID instead.")
-                return
-            end
-        end
-        local name = C_Spell.GetSpellName(id) or ("Spell " .. id)
-        table.insert(db.watchList, { kind = "spell", id = id, label = name })
-        print("|cff00ccff[BSA]|r Now watching: |cffffff00" .. name .. "|r (spell " .. id .. ")")
-        ScheduleUpdate()
-    elseif cmd == "additem" then
-        local id = tonumber(origArg)
-        if not id then
-            print("|cff00ccff[BSA]|r Usage: /bsa additem <itemID>  (numeric ID only)")
+    if cmd == "buff" then
+        if origArg == "" then
+            print("|cff00ccff[BSA]|r Usage: /bsa buff <spell id or name>")
             return
         end
-        local name = C_Item.GetItemNameByID(id) or ("Item " .. id)
-        table.insert(db.watchList, { kind = "item", id = id, label = name })
-        print("|cff00ccff[BSA]|r Now watching: |cffffff00" .. name .. "|r (item " .. id .. ")")
-        ScheduleUpdate()
-    elseif cmd == "remove" then
-        local id = tonumber(origArg)
+        local id = ParseSpellArg(origArg)
         if not id then
-            print("|cff00ccff[BSA]|r Usage: /bsa remove <id>")
+            print("|cff00ccff[BSA]|r Spell not found in spellbook: |cffffff00" .. origArg .. "|r")
             return
         end
-        local removed = false
-        for i = #db.watchList, 1, -1 do
-            if db.watchList[i].id == id then
-                print("|cff00ccff[BSA]|r Removed: |cffffff00" .. db.watchList[i].label .. "|r")
-                table.remove(db.watchList, i)
-                removed = true
-            end
-        end
-        if not removed then
-            print("|cff00ccff[BSA]|r No entry found with id " .. id)
-        end
+        db.slotBuff = { spellID = id }
+        local name = C_Spell.GetSpellName(id) or ("spell " .. id)
+        print("|cff00ccff[BSA]|r Buff slot set to: |cffffff00" .. name .. "|r")
         ScheduleUpdate()
-    elseif cmd == "list" then
-        if #db.watchList == 0 then
-            print("|cff00ccff[BSA]|r Watch list is empty.")
+    elseif cmd == "food" then
+        if origArg == "" then
+            print("|cff00ccff[BSA]|r Usage: /bsa food <item id, name, or shift-click link>")
+            return
+        end
+        local id = ParseItemArg(origArg)
+        if not id then
+            print("|cff00ccff[BSA]|r Item not found: |cffffff00" .. origArg .. "|r  (make sure it's in your bags)")
+            return
+        end
+        db.slotFood = { itemID = id }
+        local name = C_Item.GetItemNameByID(id) or ("item " .. id)
+        print("|cff00ccff[BSA]|r Food slot set to: |cffffff00" .. name .. "|r")
+        ScheduleUpdate()
+    elseif cmd == "weapon" then
+        if origArg == "" then
+            print("|cff00ccff[BSA]|r Usage: /bsa weapon <item id, name, or shift-click link>")
+            return
+        end
+        local id = ParseItemArg(origArg)
+        if not id then
+            print("|cff00ccff[BSA]|r Item not found: |cffffff00" .. origArg .. "|r  (make sure it's in your bags)")
+            return
+        end
+        db.slotWeapon = { itemID = id }
+        local name = C_Item.GetItemNameByID(id) or ("item " .. id)
+        print("|cff00ccff[BSA]|r Weapon slot set to: |cffffff00" .. name .. "|r")
+        ScheduleUpdate()
+    elseif cmd == "flask" then
+        if origArg == "" then
+            print("|cff00ccff[BSA]|r Usage: /bsa flask <item id, name, or shift-click link>")
+            return
+        end
+        local id = ParseItemArg(origArg)
+        if not id then
+            print("|cff00ccff[BSA]|r Item not found: |cffffff00" .. origArg .. "|r  (make sure it's in your bags)")
+            return
+        end
+        db.slotFlask = { itemID = id }
+        local name = C_Item.GetItemNameByID(id) or ("item " .. id)
+        print("|cff00ccff[BSA]|r Flask slot set to: |cffffff00" .. name .. "|r")
+        ScheduleUpdate()
+    elseif cmd == "rune" then
+        if origArg == "" then
+            print("|cff00ccff[BSA]|r Usage: /bsa rune <item id, name, or shift-click link>")
+            return
+        end
+        local id = ParseItemArg(origArg)
+        if not id then
+            print("|cff00ccff[BSA]|r Item not found: |cffffff00" .. origArg .. "|r  (make sure it's in your bags)")
+            return
+        end
+        db.slotRune = { itemID = id }
+        local name = C_Item.GetItemNameByID(id) or ("item " .. id)
+        print("|cff00ccff[BSA]|r Rune slot set to: |cffffff00" .. name .. "|r")
+        ScheduleUpdate()
+    elseif cmd == "clear" then
+        local slotKey = "slot" .. arg:sub(1, 1):upper() .. arg:sub(2)
+        if db[slotKey] ~= nil then
+            db[slotKey] = nil
+            print("|cff00ccff[BSA]|r Cleared: " .. arg)
+            ScheduleUpdate()
         else
-            print("|cff00ccff[BSA]|r Watching " .. #db.watchList .. " buff(s):")
-            for _, e in ipairs(db.watchList) do
-                print(string.format("  [%s] |cffffff00%s|r  (id: %d)", e.kind, e.label, e.id))
-            end
+            print("|cff00ccff[BSA]|r Unknown slot: " .. arg .. "  (buff, food, weapon, flask, rune)")
         end
     elseif cmd == "combat" then
         db.onlyInCombat = not db.onlyInCombat
@@ -378,12 +496,15 @@ SlashCmdList["BSALERT"] = function(msg)
         print(string.format("|cff00ccff[BSA]|r Flash color set to %.2f %.2f %.2f", r, g, b))
         ScheduleUpdate()
     elseif cmd == "status" then
-        print("|cff00ccff[BSA]|r Current settings:")
+        print("|cff00ccff[BSA]|r Current config:")
+        print("  " .. SlotStatus("slotBuff", "Buff"))
+        print("  " .. SlotStatus("slotFood", "Food"))
+        print("  " .. SlotStatus("slotWeapon", "Weapon"))
+        print("  " .. SlotStatus("slotFlask", "Flask"))
+        print("  " .. SlotStatus("slotRune", "Rune"))
         print("  Combat-only: " .. tostring(db.onlyInCombat))
         print("  Group check: " .. tostring(db.checkGroup))
-        print(string.format("  Flash alpha: %.2f", db.flashAlpha))
-        print(string.format("  Flash color: r=%.2f g=%.2f b=%.2f", db.flashR, db.flashG, db.flashB))
-        print("  Watching " .. #db.watchList .. " buff(s) — /bsa list for details")
+        print(string.format("  Flash: alpha=%.2f  color=%.2f/%.2f/%.2f", db.flashAlpha, db.flashR, db.flashG, db.flashB))
     else
         PrintHelp()
     end

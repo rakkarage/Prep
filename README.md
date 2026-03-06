@@ -2,7 +2,7 @@
 
 ![screenshot](screenshot.png)
 
-Five user defined spells, items to track.
+Five user defined spells/items to track.
 Finds source of missing defined buffs on bars and highlights them when missing.
 
 - buff

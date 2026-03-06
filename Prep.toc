@@ -1,9 +1,11 @@
-## Interface: 120000
-## Title: BattleShoutAlert
+## Interface: 120001
+## Version: v2026
+## Title: Prep
+## Category: User Interface
 ## Notes: Highlights Battle Shout when it's not active on you or your group. |cffAAAAAA/bsa help|r
-## Author: YourName
+## Author: rakkarage
 ## Version: 1.0.0
-## SavedVariables: BattleShoutAlertDB
+## SavedVariables: PrepDB
 ## IconTexture: Interface/Icons/ability_warrior_battleshout
 
-BattleShoutAlert.lua
+Prep.lua

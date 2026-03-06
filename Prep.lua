@@ -1,9 +1,8 @@
--- BattleShoutAlert
--- Glows action bar buttons when key buffs are missing.
--- Five fixed slots: buff, food, weapon, flask, rune.
--- Compatible with WoW: Midnight
+-- Prep
+-- Five user defined spells, items to track.
+-- Finds source of missing defined buffs on bars and highlights them when missing.
 
-local ADDON_NAME    = "BattleShoutAlert"
+local ADDON_NAME    = "Prep"
 
 local defaults      = {
     checkGroup = true,
@@ -226,8 +225,8 @@ events:RegisterEvent("ADDON_LOADED")
 events:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" then
         if arg1 ~= ADDON_NAME then return end
-        BattleShoutAlertDB = BattleShoutAlertDB or {}
-        db = BattleShoutAlertDB
+        PrepDB = PrepDB or {}
+        db = PrepDB
         for k, v in pairs(defaults) do
             if db[k] == nil then db[k] = v end
         end
@@ -338,9 +337,8 @@ local function PrintHelp()
     print("  |cffffff00/bsa status|r                  - show current config")
 end
 
-SLASH_BSALERT1 = "/bsa"
-SLASH_BSALERT2 = "/battleshout"
-SlashCmdList["BSALERT"] = function(msg)
+SLASH_BSALERT1 = "/prep"
+SlashCmdList["PREP"] = function(msg)
     local origMsg = (msg or ""):trim()
     local cmd, origArg = origMsg:match("^(%S+)%s*(.*)$")
     cmd = cmd and cmd:lower() or ""
@@ -462,14 +460,6 @@ SlashCmdList["BSALERT"] = function(msg)
         print("  Group check: " .. tostring(db.checkGroup))
         print(string.format("  Flash: alpha=%.2f  color=%.2f/%.2f/%.2f", db.flashAlpha, db.flashR, db.flashG, db.flashB))
     else
-        PrintHelp()
-    end
-end
-
--- ─── Addon compartment ───────────────────────────────────────────────────────
-
-function BattleShoutAlert_OnAddonCompartmentClick(addonName)
-    if addonName == ADDON_NAME then
         PrintHelp()
     end
 end

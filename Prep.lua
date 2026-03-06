@@ -312,16 +312,16 @@ end
 
 local function PrintHelp()
     print("|cff00ccff[Prep]|r Commands:")
-    print("  |cffffff00/prep buff <spell id/name/link>|r   - set buff slot (Battle Shout, Arcane Intellect, etc)")
-    print("  |cffffff00/prep food <item id/name/link>|r    - set food slot")
-    print("  |cffffff00/prep weapon <item id/name/link>|r  - set weapon enchant slot")
-    print("  |cffffff00/prep flask <item id/name/link>|r   - set flask slot")
-    print("  |cffffff00/prep rune <item id/name/link>|r    - set rune slot")
+    print("  |cffffff00/prep buff <spell id/name/link>|r - set buff slot (Battle Shout, Arcane Intellect, etc)")
+    print("  |cffffff00/prep food <item id/name/link>|r - set food slot")
+    print("  |cffffff00/prep weapon <item id/name/link>|r - set weapon enchant slot")
+    print("  |cffffff00/prep flask <item id/name/link>|r - set flask slot")
+    print("  |cffffff00/prep rune <item id/name/link>|r - set rune slot")
     print("  |cffffff00/prep clear <buff/food/weapon/flask/rune>|r - clear a slot")
-    print("  |cffffff00/prep group|r                       - toggle group buff check")
-    print("  |cffffff00/prep alpha <0.1-1.0>|r             - set highlight alpha")
-    print("  |cffffff00/prep color <r> <g> <b>|r           - set highlight color (0.0 - 1.0)")
-    print("  |cffffff00/prep status|r                      - show current config")
+    print("  |cffffff00/prep group|r - toggle group buff check")
+    print("  |cffffff00/prep alpha <0.1-1.0>|r - set highlight alpha")
+    print("  |cffffff00/prep color <r> <g> <b>|r - set highlight color (0.0 - 1.0)")
+    print("  |cffffff00/prep status|r - show current config")
 end
 
 SLASH_PREP1 = "/prep"

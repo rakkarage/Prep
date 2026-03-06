@@ -2,9 +2,8 @@
 
 ![screenshot](screenshot.png)
 
-Finds source of missing defined buffs on bars and highlights them when missing.
-
 Five user defined spells, items to track.
+Finds source of missing defined buffs on bars and highlights them when missing.
 
 - buff
 - food

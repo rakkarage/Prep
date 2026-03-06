@@ -1,5 +1,5 @@
 -- Prep
--- Five user defined spells, items to track.
+-- Five user defined spells/items to track.
 -- Finds source of missing defined buffs on bars and highlights them when missing.
 
 local ADDON_NAME    = "Prep"
@@ -123,24 +123,19 @@ local function HasWeaponEnchant()
 end
 
 local function HasFlask()
-    for i = 1, 40 do
-        local aura = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
-        if not aura then break end
-        if aura.name then
-            local lower = aura.name:lower()
-            if lower:find("flask") or lower:find("phial") then return true end
-        end
-    end
-    return false
+    if not db.slotFlask or not db.slotFlask.itemID then return true end
+    local name = C_Item.GetItemNameByID(db.slotFlask.itemID)
+    if not name then return true end
+    return AuraUtil.FindAuraByName(name, "player", "HELPFUL") ~= nil
 end
 
 local function HasRune()
     for i = 1, 40 do
-        local aura = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
-        if not aura then break end
-        if aura.name then
-            local lower = aura.name:lower()
-            if lower:find("rune") or lower:find("augment") then return true end
+        local ok, aura = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HELPFUL")
+        if not ok or not aura then break end
+        local ok2, name = pcall(function() return aura.name end)
+        if ok2 and name and not issecretvalue(name) then
+            if name:lower():find("augment") then return true end
         end
     end
     return false
@@ -189,13 +184,17 @@ end
 -- ─── Main update ─────────────────────────────────────────────────────────────
 
 local function ScheduleUpdate()
+    if InCombatLockdown() then
+        for _, btn in pairs(activeGlows) do RemoveGlow(btn) end
+        wipe(activeGlows)
+        return
+    end
     if pendingUpdate then return end
     pendingUpdate = true
     C_Timer.After(0.1, function()
         pendingUpdate = false
         for _, btn in pairs(activeGlows) do RemoveGlow(btn) end
         wipe(activeGlows)
-        if InCombatLockdown() then return end
         for _, check in ipairs(checks) do
             local slot = db[check.key]
             if slot then
@@ -229,6 +228,10 @@ events:SetScript("OnEvent", function(self, event, arg1)
         self:RegisterEvent("GROUP_ROSTER_UPDATE")
         self:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
         self:UnregisterEvent("ADDON_LOADED")
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        C_Timer.After(1.0, function()
+            if not InCombatLockdown() then ScheduleUpdate() end
+        end)
     elseif event == "UNIT_AURA" then
         local unit = arg1
         if unit == "player" or (db.checkGroup and (unit:find("party") or unit:find("raid"))) then

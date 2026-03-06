@@ -13,6 +13,8 @@ Finds source of missing defined buffs on bars and highlights them when missing.
 
 ## Usage
 
+Only works outside combat currently.
+
 - `/prep`: shows usage
 - `/prep buff <spell id/link/name>`: set buff slot (Battle Shout, Arcane Intellect, etc)
 - `/prep food <item id/link/name>`: set food slot

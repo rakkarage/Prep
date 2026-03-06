@@ -25,26 +25,26 @@ local pendingUpdate = false
 
 -- ─── Slot → button frame (AssKey-style, correct for Midnight) ────────────────
 
-local function GetButtonForActionSlot(actionSlot)
+local function GetButtonForActionSlot(slot)
     local btnName
-    if actionSlot <= 12 then
-        btnName = "ActionButton" .. actionSlot
-    elseif actionSlot <= 24 then
-        btnName = "ActionButton" .. (actionSlot - 12)              -- bonus bar (same frames as main)
-    elseif actionSlot <= 36 then
-        btnName = "MultiBarBottomLeftButton" .. (actionSlot - 24)  -- bar 3
-    elseif actionSlot <= 48 then
-        btnName = "MultiBarBottomRightButton" .. (actionSlot - 36) -- bar 4
-    elseif actionSlot <= 60 then
-        btnName = "MultiBarRightButton" .. (actionSlot - 48)       -- bar 5
-    elseif actionSlot <= 72 then
-        btnName = "MultiBarLeftButton" .. (actionSlot - 60)        -- bar 6
-    elseif actionSlot >= 145 and actionSlot <= 156 then
-        btnName = "MultiBar5Button" .. (actionSlot - 144)
-    elseif actionSlot >= 157 and actionSlot <= 168 then
-        btnName = "MultiBar6Button" .. (actionSlot - 156)
-    elseif actionSlot >= 169 and actionSlot <= 180 then
-        btnName = "MultiBar7Button" .. (actionSlot - 168)
+    if slot <= 12 then
+        btnName = "ActionButton" .. slot
+    elseif slot <= 24 then
+        btnName = "ActionButton" .. (slot - 12)
+    elseif slot <= 36 then
+        btnName = "MultiBarRightButton" .. (slot - 24)
+    elseif slot <= 48 then
+        btnName = "MultiBarLeftButton" .. (slot - 36)
+    elseif slot <= 60 then
+        btnName = "MultiBarBottomRightButton" .. (slot - 48)
+    elseif slot <= 72 then
+        btnName = "MultiBarBottomLeftButton" .. (slot - 60)
+    elseif slot >= 145 and slot <= 156 then
+        btnName = "MultiBar5Button" .. (slot - 144)
+    elseif slot >= 157 and slot <= 168 then
+        btnName = "MultiBar6Button" .. (slot - 156)
+    elseif slot >= 169 and slot <= 180 then
+        btnName = "MultiBar7Button" .. (slot - 168)
     end
     if not btnName then return nil end
     local btn = _G[btnName]

@@ -66,6 +66,7 @@ local function FindButtonForSpell(spellID)
 end
 
 local function FindButtonForItem(itemID)
+    if (GetItemCount(itemID) or 0) == 0 then return nil end
     for actionSlot = 1, 180 do
         local actionType, id = GetActionInfo(actionSlot)
         if actionType == "item" and id == itemID then
@@ -300,6 +301,8 @@ local function ParseItemArg(arg)
 end
 
 local function ParseSpellArg(arg)
+    local linkID = arg:match("|Hspell:(%d+)")
+    if linkID then return tonumber(linkID) end
     local id = tonumber(arg)
     if id then return id end
     return FindSpellIDByName(arg)
@@ -328,10 +331,10 @@ local function PrintHelp()
     print("  |cffffff00/bsa weapon <item id/name/link>|r - set weapon enchant slot")
     print("  |cffffff00/bsa flask <item id/name/link>|r - set flask slot")
     print("  |cffffff00/bsa rune <item id/name/link>|r  - set rune slot")
-    print("  |cffffff00/bsa clear <buff|food|weapon|flask|rune>|r - clear a slot")
+    print("  |cffffff00/bsa clear <buff/food/weapon/flask/rune>|r - clear a slot")
     print("  |cffffff00/bsa group|r                   - toggle group buff check")
-    print("  |cffffff00/bsa alpha <0.1-1.0>|r         - set flash alpha")
-    print("  |cffffff00/bsa color <r> <g> <b>|r       - set flash color (0-1 each)")
+    print("  |cffffff00/bsa alpha <0.1-1.0>|r         - set highlight alpha")
+    print("  |cffffff00/bsa color <r> <g> <b>|r       - set highlight color (0.0 - 1.0)")
     print("  |cffffff00/bsa status|r                  - show current config")
 end
 

@@ -7,8 +7,8 @@ local ADDON_NAME    = "Prep"
 local defaults      = {
     checkGroup = true,
     flashAlpha = 1.0,
-    flashR     = 1.0,
-    flashG     = 0.1,
+    flashR     = 0.0,
+    flashG     = 1.1,
     flashB     = 0.1,
     -- Each slot stores: { spellID=n } or { itemID=n } or nil if unset
     slotBuff   = nil,
@@ -123,7 +123,7 @@ end
 
 local function HasWeaponEnchant()
     local hasEnchant = GetWeaponEnchantInfo()
-    return hasEnchant == true or hasEnchant == 1
+    return hasEnchant == true
 end
 
 local function HasFlask()

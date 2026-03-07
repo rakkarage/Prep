@@ -1,6 +1,5 @@
 -- Prep
--- Five user defined spells/items to track.
--- Finds source of missing defined buffs on bars and highlights them when missing.
+-- Highlights action bar buttons for missing buff, food, weapon enchant, flask and rune.
 
 local ADDON_NAME    = "Prep"
 

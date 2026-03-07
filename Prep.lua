@@ -22,7 +22,7 @@ local db
 local activeGlows   = {}
 local pendingUpdate = false
 
--- ─── Slot → button frame ─────────────────────────────────────────────────────
+--#region ─── Slot → button frame ─────────────────────────────────────────────────────
 
 local function GetButtonForActionSlot(slot)
     local btnName
@@ -51,7 +51,9 @@ local function GetButtonForActionSlot(slot)
     return nil
 end
 
--- ─── Find button on bar ───────────────────────────────────────────────────────
+--#endregion
+
+--#region ─── Find button on bar ───────────────────────────────────────────────────────
 
 local function FindButtonForSpell(spellID)
     for actionSlot = 1, 180 do
@@ -83,7 +85,9 @@ local function FindButton(slot)
     return nil
 end
 
--- ─── Buff presence checks ─────────────────────────────────────────────────────
+--#endregion
+
+--#region ─── Buff presence checks ─────────────────────────────────────────────────────
 
 local function HasAura(name, checkGroup)
     if AuraUtil.FindAuraByName(name, "player", "HELPFUL") then return true end
@@ -141,7 +145,9 @@ local function HasRune()
     return false
 end
 
--- ─── Checks table ────────────────────────────────────────────────────────────
+--#endregion
+
+--#region ─── Checks table ────────────────────────────────────────────────────────────
 
 local checks = {
     { key = "slotBuff",   label = "Buff",   hasFunc = function() return HasBuff(db.slotBuff) end },
@@ -151,7 +157,9 @@ local checks = {
     { key = "slotRune",   label = "Rune",   hasFunc = HasRune },
 }
 
--- ─── Glow / Flash ────────────────────────────────────────────────────────────
+--#endregion
+
+--#region ─── Glow / Flash ────────────────────────────────────────────────────────────
 
 local function ApplyGlow(btn)
     if not btn then return end
@@ -181,7 +189,9 @@ local function RemoveGlow(btn)
     end
 end
 
--- ─── Main update ─────────────────────────────────────────────────────────────
+--#endregion
+
+--#region ─── Main update ─────────────────────────────────────────────────────────────
 
 local function ScheduleUpdate()
     if InCombatLockdown() then
@@ -208,7 +218,9 @@ local function ScheduleUpdate()
     end)
 end
 
--- ─── Events ──────────────────────────────────────────────────────────────────
+--#endregion
+
+--#region ─── Events ──────────────────────────────────────────────────────────────────
 
 local events = CreateFrame("Frame")
 events:RegisterEvent("ADDON_LOADED")
@@ -242,7 +254,9 @@ events:SetScript("OnEvent", function(self, event, arg1)
     end
 end)
 
--- ─── Name/link → ID helpers ───────────────────────────────────────────────────
+--#endregion
+
+--#region ─── Name/link → ID helpers ───────────────────────────────────────────────────
 
 local function FindSpellIDByName(searchName)
     searchName = searchName:lower()
@@ -297,7 +311,9 @@ local function ParseSpellArg(arg)
     return FindSpellIDByName(arg)
 end
 
--- ─── Slash commands ───────────────────────────────────────────────────────────
+--#endregion
+
+--#region ─── Slash commands ───────────────────────────────────────────────────────────
 
 local function SlotStatus(key, label)
     local slot = db[key]
@@ -450,3 +466,5 @@ SlashCmdList["PREP"] = function(msg)
         PrintHelp()
     end
 end
+
+--#endregion

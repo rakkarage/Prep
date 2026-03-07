@@ -53,7 +53,7 @@ end
 
 --#endregion
 
---#region ─── Find button on bar ───────────────────────────────────────────────────────
+--#region ─── Find button on bar ──────────────────────────────────────────────────────
 
 local function FindButtonForSpell(spellID)
     for actionSlot = 1, 180 do
@@ -87,7 +87,7 @@ end
 
 --#endregion
 
---#region ─── Buff presence checks ─────────────────────────────────────────────────────
+--#region ─── Buff presence checks ────────────────────────────────────────────────────
 
 local function HasAura(name, checkGroup)
     if AuraUtil.FindAuraByName(name, "player", "HELPFUL") then return true end
@@ -256,7 +256,7 @@ end)
 
 --#endregion
 
---#region ─── Name/link → ID helpers ───────────────────────────────────────────────────
+--#region ─── Name/link → ID helpers ──────────────────────────────────────────────────
 
 local function FindSpellIDByName(searchName)
     searchName = searchName:lower()
@@ -313,7 +313,7 @@ end
 
 --#endregion
 
---#region ─── Slash commands ───────────────────────────────────────────────────────────
+--#region ─── Slash commands ──────────────────────────────────────────────────────────
 
 local function SlotStatus(key, label)
     local slot = db[key]

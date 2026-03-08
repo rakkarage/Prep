@@ -89,20 +89,22 @@ end
 --#region ─── Buff presence checks ────────────────────────────────────────────────────
 
 local function HasAura(name, checkGroup)
-    if AuraUtil.FindAuraByName(name, "player", "HELPFUL") then return true end
+    local playerHas = AuraUtil.FindAuraByName(name, "player", "HELPFUL") ~= nil
+
     if checkGroup then
         local groupSize = GetNumGroupMembers()
         if groupSize > 0 then
             local prefix = IsInRaid() and "raid" or "party"
             for i = 1, groupSize do
                 local unit = prefix .. i
-                if UnitExists(unit) and AuraUtil.FindAuraByName(name, unit, "HELPFUL") then
-                    return true
+                if UnitExists(unit) and not AuraUtil.FindAuraByName(name, unit, "HELPFUL") then
+                    return false
                 end
             end
         end
     end
-    return false
+
+    return playerHas
 end
 
 local function HasBuff(slot)

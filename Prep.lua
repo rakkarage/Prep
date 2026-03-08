@@ -6,9 +6,9 @@ local ADDON_NAME    = "Prep"
 local defaults      = {
     checkGroup = true,
     flashAlpha = 1.0,
-    flashR     = 0.0,
-    flashG     = 1.0,
-    flashB     = 0.0,
+    flashR     = 1.0,
+    flashG     = 0.3,
+    flashB     = 0.3,
     -- Each slot stores: { spellID=n } or { itemID=n } or nil if unset
     slotBuff   = nil,
     slotFood   = nil,

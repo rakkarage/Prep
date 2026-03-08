@@ -339,7 +339,7 @@ local function PrintHelp()
     print("  |cffffff00/prep group|r - toggle group buff check")
     print("  |cffffff00/prep alpha <0.1-1.0>|r - set highlight alpha")
     print("  |cffffff00/prep color <r> <g> <b>|r - set highlight color (0.0 - 1.0)")
-    print("  |cffffff00/prep status|r - show current config")
+    print("  |cffffff00/prep status|r - show current status")
 end
 
 SLASH_PREP1 = "/prep"
@@ -452,7 +452,7 @@ SlashCmdList["PREP"] = function(msg)
         print(string.format("|cff00ccff[Prep]|r Highlight color set to %.2f %.2f %.2f", r, g, b))
         ScheduleUpdate()
     elseif cmd == "status" then
-        print("|cff00ccff[Prep]|r Current config:")
+        print("|cff00ccff[Prep]|r Current status:")
         print("  " .. SlotStatus("slotBuff", "Buff"))
         print("  " .. SlotStatus("slotFood", "Food"))
         print("  " .. SlotStatus("slotWeapon", "Weapon"))

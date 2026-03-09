@@ -58,7 +58,7 @@ end
 local function FindButtonForSpell(spellID)
     for actionSlot = 1, 180 do
         local actionType, id = GetActionInfo(actionSlot)
-        if actionType == "spell" and id == spellID then
+        if (actionType == "spell" or actionType == "macro") and id == spellID then
             local btn = GetButtonForActionSlot(actionSlot)
             if btn then return btn end
         end
@@ -70,7 +70,7 @@ local function FindButtonForItem(itemID)
     if (GetItemCount(itemID) or 0) == 0 then return nil end
     for actionSlot = 1, 180 do
         local actionType, id = GetActionInfo(actionSlot)
-        if actionType == "item" and id == itemID then
+        if (actionType == "item" or actionType == "macro") and id == itemID then
             local btn = GetButtonForActionSlot(actionSlot)
             if btn then return btn end
         end
@@ -247,6 +247,7 @@ events:SetScript("OnEvent", function(self, event, arg1)
         for k, v in pairs(defaults) do
             if db[k] == nil then db[k] = v end
         end
+        self:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
         self:RegisterEvent("PLAYER_ENTERING_WORLD")
         self:RegisterEvent("PLAYER_REGEN_ENABLED")
         self:RegisterEvent("PLAYER_REGEN_DISABLED")
@@ -348,7 +349,7 @@ end
 
 --#endregion
 
---#region ─── Slash commands ──────────────────────────────────────────────────────────
+--#region ─── Status display ──────────────────────────────────────────────────────────
 
 local function SlotStatus(key, label)
     local slot = db[key]
@@ -368,19 +369,63 @@ local function SlotStatus(key, label)
     return label .. ": |cffff4444(unknown)|r"
 end
 
+local function ShowStatus()
+    print("|cff00ccff[Prep]|r Current status:")
+    print("  " .. SlotStatus("slotBuff", "Buff"))
+    print("  " .. SlotStatus("slotFood", "Food"))
+    print("  " .. SlotStatus("slotWeapon", "Weapon"))
+    print("  " .. SlotStatus("slotFlask", "Flask"))
+    print("  " .. SlotStatus("slotRune", "Rune"))
+    print("  " .. SlotStatus("slotPet", "Pet"))
+    print("  Group check: " .. tostring(db.checkGroup))
+    print(string.format("  Highlight: alpha=%.2f  color=%.2f/%.2f/%.2f", db.flashAlpha, db.flashR, db.flashG,
+        db.flashB))
+end
+
+--#endregion
+
+--#region ─── Slash commands ──────────────────────────────────────────────────────────
+
+local function ResetToDefaults()
+    -- Clear all current glows first
+    for _, btn in pairs(activeGlows) do
+        RemoveGlow(btn)
+    end
+    wipe(activeGlows)
+
+    -- Completely wipe and rebuild the database
+    wipe(PrepDB)
+    db = PrepDB
+
+    -- Set all defaults
+    for k, v in pairs(defaults) do
+        db[k] = v
+    end
+
+    -- Force a full update after a short delay
+    C_Timer.After(0.2, function()
+        ScheduleUpdate()
+        -- Show status after reset
+        ShowStatus()
+    end)
+
+    print("|cff00ccff[Prep]|r All settings reset to defaults")
+end
+
 local function PrintHelp()
     print("|cff00ccff[Prep]|r Commands:")
-    print("  |cffffff00/prep buff <spell id/name/link>|r   - Battle Shout, Arcane Intellect, etc")
-    print("  |cffffff00/prep food <item id/name/link>|r    - food item")
-    print("  |cffffff00/prep weapon <item id/name/link>|r  - weapon enchant item")
-    print("  |cffffff00/prep flask <item id/name/link>|r   - flask item")
-    print("  |cffffff00/prep rune <item id/name/link>|r    - augment rune item")
-    print("  |cffffff00/prep pet <name>|r                  - cosmetic pet (custom or species name)")
-    print("  |cffffff00/prep clear <slot>|r                - buff/food/weapon/flask/rune/pet")
-    print("  |cffffff00/prep group|r                       - toggle group buff check")
-    print("  |cffffff00/prep alpha <0.1-1.0>|r             - highlight alpha")
-    print("  |cffffff00/prep color <r> <g> <b>|r           - highlight color (0.0-1.0)")
-    print("  |cffffff00/prep status|r                      - show current settings")
+    print("  |cffffff00/prep buff <spell id/name/link>|r - Battle Shout, Arcane Intellect, etc")
+    print("  |cffffff00/prep food <item id/name/link>|r - food item")
+    print("  |cffffff00/prep weapon <item id/name/link>|r - weapon enchant item")
+    print("  |cffffff00/prep flask <item id/name/link>|r - flask item")
+    print("  |cffffff00/prep rune <item id/name/link>|r - augment rune item")
+    print("  |cffffff00/prep pet <name>|r - cosmetic pet (custom or species name)")
+    print("  |cffffff00/prep clear <slot>|r - buff/food/weapon/flask/rune/pet")
+    print("  |cffffff00/prep reset|r - reset all settings to defaults (shows status)")
+    print("  |cffffff00/prep group|r - toggle group buff check")
+    print("  |cffffff00/prep alpha <0.1-1.0>|r - highlight alpha")
+    print("  |cffffff00/prep color <r> <g> <b>|r - highlight color (0.0-1.0)")
+    print("  |cffffff00/prep status|r - show current settings")
 end
 
 SLASH_PREP1 = "/prep"
@@ -478,6 +523,8 @@ SlashCmdList["PREP"] = function(msg)
         else
             print("|cff00ccff[Prep]|r Unknown slot: " .. arg .. "  (buff / food / weapon / flask / rune / pet)")
         end
+    elseif cmd == "reset" then
+        ResetToDefaults()
     elseif cmd == "group" then
         db.checkGroup = not db.checkGroup
         print("|cff00ccff[Prep]|r Group buff check: " .. (db.checkGroup and "|cff00ff00ON|r" or "|cffff4444OFF|r"))
@@ -502,16 +549,7 @@ SlashCmdList["PREP"] = function(msg)
         print(string.format("|cff00ccff[Prep]|r Color set to %.2f %.2f %.2f", r, g, b))
         ScheduleUpdate()
     elseif cmd == "status" then
-        print("|cff00ccff[Prep]|r Current status:")
-        print("  " .. SlotStatus("slotBuff", "Buff"))
-        print("  " .. SlotStatus("slotFood", "Food"))
-        print("  " .. SlotStatus("slotWeapon", "Weapon"))
-        print("  " .. SlotStatus("slotFlask", "Flask"))
-        print("  " .. SlotStatus("slotRune", "Rune"))
-        print("  " .. SlotStatus("slotPet", "Pet"))
-        print("  Group check: " .. tostring(db.checkGroup))
-        print(string.format("  Highlight: alpha=%.2f  color=%.2f/%.2f/%.2f", db.flashAlpha, db.flashR, db.flashG,
-            db.flashB))
+        ShowStatus()
     else
         PrintHelp()
     end

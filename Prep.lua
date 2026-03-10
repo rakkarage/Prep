@@ -214,10 +214,16 @@ local function ScheduleUpdate()
         wipe(activeGlows)
         return
     end
+    if EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive() then
+        for _, btn in pairs(activeGlows) do RemoveGlow(btn) end
+        wipe(activeGlows)
+        return
+    end
     if pendingUpdate then return end
     pendingUpdate = true
     C_Timer.After(0.1, function()
         pendingUpdate = false
+        if EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive() then return end
         for _, btn in pairs(activeGlows) do RemoveGlow(btn) end
         wipe(activeGlows)
         for _, check in ipairs(checks) do
@@ -247,6 +253,7 @@ events:SetScript("OnEvent", function(self, event, arg1)
         for k, v in pairs(defaults) do
             if db[k] == nil then db[k] = v end
         end
+        self:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
         self:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
         self:RegisterEvent("PLAYER_ENTERING_WORLD")
         self:RegisterEvent("PLAYER_REGEN_ENABLED")

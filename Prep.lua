@@ -20,7 +20,7 @@ local defaults = {
 -- ── Slot → button frame ───────────────────────────────────────────────────────
 
 local BAR_RANGES = {
-    { 1,   12,  "ActionButton",               0 },
+    { 1,   12,  "ActionButton",              0 },
     { 13,  24,  "ActionButton",              -12 },
     { 25,  36,  "MultiBarRightButton",       -24 },
     { 37,  48,  "MultiBarLeftButton",        -36 },
@@ -261,20 +261,38 @@ local function FindPetGUIDByName(search)
     end
 end
 
--- ── Slash commands ────────────────────────────────────────────────────────────
+-- ── Icon helpers ──────────────────────────────────────────────────────────────
+
+local ICON_SIZE = 16
+
+local function IconTag(tex)
+    if not tex then return "" end
+    return ("|T%s:%d|t "):format(tex, ICON_SIZE)
+end
+
+local function SpellIcon(id) return IconTag(id and C_Spell.GetSpellTexture(id)) end
+local function ItemIcon(id) return IconTag(id and select(10, GetItemInfo(id))) end
+local function PetIcon(guid)
+    if not guid then return "" end
+    local iconFileID = select(16, C_PetJournal.GetPetInfoByPetID(guid))
+    return IconTag(iconFileID)
+end
+
+-- ── Status display ────────────────────────────────────────────────────────────
 
 local function SlotStatus(key, label)
     local s = db[key]
     if not s then return label .. ": |cffaaaaaa(not set)|r" end
     if s.spellID then
-        local n = C_Spell.GetSpellName(s.spellID) or ("spell " .. s.spellID)
-        return label .. ": |cffffff00" .. n .. "|r (spell " .. s.spellID .. ")"
+        local name = C_Spell.GetSpellName(s.spellID) or ("spell " .. s.spellID)
+        return label .. ": " .. SpellIcon(s.spellID) .. "|cffffff00" .. name .. "|r"
     elseif s.itemID then
-        local n = C_Item.GetItemNameByID(s.itemID) or ("item " .. s.itemID)
-        return label .. ": |cffffff00" .. n .. "|r (item " .. s.itemID .. ")"
+        local name = C_Item.GetItemNameByID(s.itemID) or ("item " .. s.itemID)
+        return label .. ": " .. ItemIcon(s.itemID) .. "|cffffff00" .. name .. "|r"
     elseif s.petGUID then
         local _, _, _, cn, _, _, _, sn = C_PetJournal.GetPetInfoByPetID(s.petGUID)
-        return label .. ": |cffffff00" .. ((cn and cn ~= "") and cn or sn or "unknown") .. "|r (pet)"
+        local name = (cn and cn ~= "") and cn or sn or "unknown"
+        return label .. ": " .. PetIcon(s.petGUID) .. "|cffffff00" .. name .. "|r"
     end
     return label .. ": |cffff4444(unknown)|r"
 end
@@ -289,8 +307,10 @@ local function ShowStatus()
     print(("  Highlight: alpha=%.2f  color=%.2f/%.2f/%.2f"):format(db.flashAlpha, db.flashR, db.flashG, db.flashB))
 end
 
+-- ── Slash commands ────────────────────────────────────────────────────────────
+
 local function PrintHelp()
-    print("|cff00ccff[Prep]|r Commands:")
+    print("|cff00ccff[Prep]|r Commands (unique prefix shorthand works, e.g. /prep st, /prep b):")
     for _, l in ipairs({
         "/prep buff <spell id/name/link>",
         "/prep food <item id/name/link>",
@@ -298,7 +318,7 @@ local function PrintHelp()
         "/prep flask <item id/name/link>",
         "/prep rune <item id/name/link>",
         "/prep pet <name>",
-        "/prep clear <buff/food/weapon/flask/rune/pet>",
+        "/prep clear <buff|food|weapon|flask|rune|pet>",
         "/prep reset",
         "/prep group  - toggle group buff check",
         "/prep alpha <0.1-1.0>",
@@ -307,15 +327,38 @@ local function PrintHelp()
     }) do print("  |cffffff00" .. l .. "|r") end
 end
 
+-- Prefix-match input against all valid commands.
+-- Returns: matched string (success), false (ambiguous, already printed), nil (no match → show help)
+local ALL_CMDS = { "buff", "food", "weapon", "flask", "rune", "pet", "clear", "reset", "group", "alpha", "color",
+    "status" }
+
+local function ResolveCmd(input)
+    if input == "" then return nil end
+    local matches = {}
+    for _, c in ipairs(ALL_CMDS) do
+        if c:sub(1, #input) == input then matches[#matches + 1] = c end
+    end
+    if #matches == 1 then return matches[1] end
+    if #matches > 1 then
+        for _, c in ipairs(matches) do if c == input then return c end end
+        print("|cff00ccff[Prep]|r Ambiguous: '|cffffff00" .. input .. "|r' matches: " .. table.concat(matches, ", "))
+        return false
+    end
+    return nil
+end
+
+local itemSlots = { food = "slotFood", weapon = "slotWeapon", flask = "slotFlask", rune = "slotRune" }
+
 SLASH_PREP1 = "/prep"
 SlashCmdList["PREP"] = function(msg)
     local origMsg = (msg or ""):trim()
-    local cmd, origArg = origMsg:match("^(%S+)%s*(.*)$")
-    cmd = cmd and cmd:lower() or ""
+    local rawCmd, origArg = origMsg:match("^(%S+)%s*(.*)$")
+    rawCmd = rawCmd and rawCmd:lower() or ""
     local arg = origArg and origArg:lower() or ""
 
-    -- item-slot commands
-    local itemSlots = { food = "slotFood", weapon = "slotWeapon", flask = "slotFlask", rune = "slotRune" }
+    local cmd = ResolveCmd(rawCmd)
+    if cmd == false then return end -- ambiguous, message already printed
+
     if itemSlots[cmd] then
         if origArg == "" then
             print("|cff00ccff[Prep]|r Usage: /prep " .. cmd .. " <item id, name, or link>"); return
@@ -325,8 +368,9 @@ SlashCmdList["PREP"] = function(msg)
             print("|cff00ccff[Prep]|r Item not found: |cffffff00" .. origArg .. "|r  (must be in bags)"); return
         end
         db[itemSlots[cmd]] = { itemID = id }
+        local name = C_Item.GetItemNameByID(id) or tostring(id)
         print("|cff00ccff[Prep]|r " ..
-        cmd:sub(1, 1):upper() .. cmd:sub(2) .. " set to: |cffffff00" .. (C_Item.GetItemNameByID(id) or id) .. "|r")
+        cmd:sub(1, 1):upper() .. cmd:sub(2) .. " set to: " .. ItemIcon(id) .. "|cffffff00" .. name .. "|r")
         ScheduleUpdate()
     elseif cmd == "buff" then
         if origArg == "" then
@@ -337,7 +381,8 @@ SlashCmdList["PREP"] = function(msg)
             print("|cff00ccff[Prep]|r Spell not found: |cffffff00" .. origArg .. "|r"); return
         end
         db.slotBuff = { spellID = id }
-        print("|cff00ccff[Prep]|r Buff set to: |cffffff00" .. (C_Spell.GetSpellName(id) or id) .. "|r")
+        local name = C_Spell.GetSpellName(id) or tostring(id)
+        print("|cff00ccff[Prep]|r Buff set to: " .. SpellIcon(id) .. "|cffffff00" .. name .. "|r")
         ScheduleUpdate()
     elseif cmd == "pet" then
         if origArg == "" then
@@ -348,7 +393,7 @@ SlashCmdList["PREP"] = function(msg)
             print("|cff00ccff[Prep]|r Pet not found: |cffffff00" .. origArg .. "|r"); return
         end
         db.slotPet = { petGUID = guid, spellID = spellID }
-        print("|cff00ccff[Prep]|r Pet set to: |cffffff00" .. name .. "|r")
+        print("|cff00ccff[Prep]|r Pet set to: " .. PetIcon(guid) .. "|cffffff00" .. name .. "|r")
         ScheduleUpdate()
     elseif cmd == "clear" then
         local k = "slot" .. arg:sub(1, 1):upper() .. arg:sub(2)

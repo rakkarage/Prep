@@ -1,147 +1,97 @@
--- Prep
--- Highlights action bar buttons for missing buff, food, weapon enchant, flask, rune, and cosmetic pet.
+-- Prep: highlights action bar buttons for missing buff, food, weapon enchant, flask, rune, and pet.
 
 local ADDON_NAME = "Prep"
+local db, activeGlows, pendingUpdate = nil, {}, false
 
 local defaults = {
     checkGroup = true,
     flashAlpha = 1.0,
-    flashR     = 1.0,
-    flashG     = 0.3,
-    flashB     = 0.3,
-    slotBuff   = nil,
-    slotFood   = nil,
+    flashR = 1.0,
+    flashG = 0.3,
+    flashB = 0.3,
+    slotBuff = nil,
+    slotFood = nil,
     slotWeapon = nil,
-    slotFlask  = nil,
-    slotRune   = nil,
-    slotPet    = nil,
+    slotFlask = nil,
+    slotRune = nil,
+    slotPet = nil,
 }
 
-local db
-local activeGlows = {}
-local pendingUpdate = false
+-- ── Slot → button frame ───────────────────────────────────────────────────────
 
---#region ─── Slot → button frame ─────────────────────────────────────────────────────
+local BAR_RANGES = {
+    { 1,   12,  "ActionButton",               0 },
+    { 13,  24,  "ActionButton",              -12 },
+    { 25,  36,  "MultiBarRightButton",       -24 },
+    { 37,  48,  "MultiBarLeftButton",        -36 },
+    { 49,  60,  "MultiBarBottomRightButton", -48 },
+    { 61,  72,  "MultiBarBottomLeftButton",  -60 },
+    { 145, 156, "MultiBar5Button",           -144 },
+    { 157, 168, "MultiBar6Button",           -156 },
+    { 169, 180, "MultiBar7Button",           -168 },
+}
 
 local function GetButtonForActionSlot(slot)
-    local btnName
-    if slot <= 12 then
-        btnName = "ActionButton" .. slot
-    elseif slot <= 24 then
-        btnName = "ActionButton" .. (slot - 12)
-    elseif slot <= 36 then
-        btnName = "MultiBarRightButton" .. (slot - 24)
-    elseif slot <= 48 then
-        btnName = "MultiBarLeftButton" .. (slot - 36)
-    elseif slot <= 60 then
-        btnName = "MultiBarBottomRightButton" .. (slot - 48)
-    elseif slot <= 72 then
-        btnName = "MultiBarBottomLeftButton" .. (slot - 60)
-    elseif slot >= 145 and slot <= 156 then
-        btnName = "MultiBar5Button" .. (slot - 144)
-    elseif slot >= 157 and slot <= 168 then
-        btnName = "MultiBar6Button" .. (slot - 156)
-    elseif slot >= 169 and slot <= 180 then
-        btnName = "MultiBar7Button" .. (slot - 168)
+    for _, r in ipairs(BAR_RANGES) do
+        if slot >= r[1] and slot <= r[2] then
+            local btn = _G[r[3] .. (slot + r[4])]
+            return btn and btn:IsVisible() and btn or nil
+        end
     end
-    if not btnName then return nil end
-    local btn = _G[btnName]
-    if btn and btn:IsVisible() then return btn end
-    return nil
 end
 
---#endregion
+-- ── Find button on bar ────────────────────────────────────────────────────────
 
---#region ─── Find button on bar ──────────────────────────────────────────────────────
-
-local function FindButtonForSpell(spellID)
-    for actionSlot = 1, 180 do
-        local actionType, id = GetActionInfo(actionSlot)
-        if (actionType == "spell" or actionType == "macro") and id == spellID then
-            local btn = GetButtonForActionSlot(actionSlot)
+local function FindButtonForType(matchType, matchID)
+    for s = 1, 180 do
+        local t, id = GetActionInfo(s)
+        if (t == matchType or t == "macro") and id == matchID then
+            local btn = GetButtonForActionSlot(s)
             if btn then return btn end
         end
     end
-    return nil
-end
-
-local function FindButtonForItem(itemID)
-    if (GetItemCount(itemID) or 0) == 0 then return nil end
-    for actionSlot = 1, 180 do
-        local actionType, id = GetActionInfo(actionSlot)
-        if (actionType == "item" or actionType == "macro") and id == itemID then
-            local btn = GetButtonForActionSlot(actionSlot)
-            if btn then return btn end
-        end
-    end
-    return nil
-end
-
-local function FindButtonForPet(petGUID)
-    for actionSlot = 1, 180 do
-        local actionType, id = GetActionInfo(actionSlot)
-        if actionType == "summonpet" and id == petGUID then
-            local btn = GetButtonForActionSlot(actionSlot)
-            if btn then return btn end
-        end
-    end
-    return nil
 end
 
 local function FindButton(slot)
     if not slot then return nil end
-    if slot.petGUID then return FindButtonForPet(slot.petGUID) end
-    if slot.spellID then return FindButtonForSpell(slot.spellID) end
-    if slot.itemID then return FindButtonForItem(slot.itemID) end
-    return nil
+    if slot.petGUID then
+        for s = 1, 180 do
+            local t, id = GetActionInfo(s)
+            if t == "summonpet" and id == slot.petGUID then
+                local btn = GetButtonForActionSlot(s)
+                if btn then return btn end
+            end
+        end
+    elseif slot.spellID then
+        return FindButtonForType("spell", slot.spellID)
+    elseif slot.itemID then
+        if (GetItemCount(slot.itemID) or 0) == 0 then return nil end
+        return FindButtonForType("item", slot.itemID)
+    end
 end
 
---#endregion
-
---#region ─── Buff / aura checks ──────────────────────────────────────────────────────
+-- ── Buff / aura checks ────────────────────────────────────────────────────────
 
 local function HasAura(name, checkGroup)
-    local playerHas = AuraUtil.FindAuraByName(name, "player", "HELPFUL") ~= nil
+    if not AuraUtil.FindAuraByName(name, "player", "HELPFUL") then return false end
     if checkGroup then
-        local groupSize = GetNumGroupMembers()
-        if groupSize > 0 then
-            local prefix = IsInRaid() and "raid" or "party"
-            for i = 1, groupSize do
-                local unit = prefix .. i
-                if UnitExists(unit) and not AuraUtil.FindAuraByName(name, unit, "HELPFUL") then
+        local n = GetNumGroupMembers()
+        if n > 0 then
+            local pfx = IsInRaid() and "raid" or "party"
+            for i = 1, n do
+                if UnitExists(pfx .. i) and not AuraUtil.FindAuraByName(name, pfx .. i, "HELPFUL") then
                     return false
                 end
             end
         end
     end
-    return playerHas
-end
-
-local function HasBuff(slot)
-    if not slot or not slot.spellID then return true end
-    local name = C_Spell.GetSpellName(slot.spellID)
-    if not name then return true end
-    return HasAura(name, db.checkGroup)
-end
-
-local WELL_FED_NAMES = { "Well Fed", "Hearty Well Fed" }
-local function HasFood()
-    for _, name in ipairs(WELL_FED_NAMES) do
-        if AuraUtil.FindAuraByName(name, "player", "HELPFUL") then return true end
-    end
-    return false
-end
-
-local function HasWeaponEnchant()
-    local hasEnchant = GetWeaponEnchantInfo()
-    return hasEnchant == true
+    return true
 end
 
 local function HasFlask()
     if not db.slotFlask or not db.slotFlask.itemID then return true end
     local name = C_Item.GetItemNameByID(db.slotFlask.itemID)
-    if not name then return true end
-    return AuraUtil.FindAuraByName(name, "player", "HELPFUL") ~= nil
+    return name and AuraUtil.FindAuraByName(name, "player", "HELPFUL") ~= nil or true
 end
 
 local function HasRune()
@@ -149,98 +99,86 @@ local function HasRune()
         local ok, aura = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HELPFUL")
         if not ok or not aura then break end
         local ok2, name = pcall(function() return aura.name end)
-        if ok2 and name and not issecretvalue(name) then
-            if name:lower():find("augment") then return true end
-        end
+        if ok2 and name and not issecretvalue(name) and name:lower():find("augment") then return true end
     end
     return false
 end
 
-local function HasPet()
-    if not db.slotPet then return true end
-    local guid = C_PetJournal.GetSummonedPetGUID()
-    return guid ~= nil and guid ~= ""
-end
-
 local checks = {
-    { key = "slotBuff",   hasFunc = function() return HasBuff(db.slotBuff) end },
-    { key = "slotFood",   hasFunc = HasFood },
-    { key = "slotWeapon", hasFunc = HasWeaponEnchant },
-    { key = "slotFlask",  hasFunc = HasFlask },
-    { key = "slotRune",   hasFunc = HasRune },
-    { key = "slotPet",    hasFunc = HasPet },
+    {
+        key = "slotBuff",
+        fn = function()
+            if not db.slotBuff or not db.slotBuff.spellID then return true end
+            local name = C_Spell.GetSpellName(db.slotBuff.spellID)
+            return not name or HasAura(name, db.checkGroup)
+        end
+    },
+    {
+        key = "slotFood",
+        fn = function()
+            return AuraUtil.FindAuraByName("Well Fed", "player", "HELPFUL") ~= nil
+                or AuraUtil.FindAuraByName("Hearty Well Fed", "player", "HELPFUL") ~= nil
+        end
+    },
+    { key = "slotWeapon", fn = function() return GetWeaponEnchantInfo() == true end },
+    { key = "slotFlask",  fn = HasFlask },
+    { key = "slotRune",   fn = HasRune },
+    {
+        key = "slotPet",
+        fn = function()
+            if not db.slotPet then return true end
+            local g = C_PetJournal.GetSummonedPetGUID()
+            return g ~= nil and g ~= ""
+        end
+    },
 }
 
---#endregion
+-- ── Glow ──────────────────────────────────────────────────────────────────────
 
---#region ─── Glow / Flash ────────────────────────────────────────────────────────────
-
-local function ApplyGlow(btn)
+local function SetGlow(btn, show)
     if not btn then return end
-    if btn.SpellHighlightTexture then
-        btn.SpellHighlightTexture:Show()
-        btn.SpellHighlightTexture:SetAlpha(db.flashAlpha)
-        btn.SpellHighlightTexture:SetVertexColor(db.flashR, db.flashG, db.flashB)
-    end
-    if btn.Flash then
-        btn.Flash:Show()
-        btn.Flash:SetAlpha(db.flashAlpha)
-        btn.Flash:SetVertexColor(db.flashR, db.flashG, db.flashB)
+    for _, k in ipairs({ "SpellHighlightTexture", "Flash" }) do
+        local t = btn[k]
+        if t then
+            if show then
+                t:Show(); t:SetAlpha(db.flashAlpha); t:SetVertexColor(db.flashR, db.flashG, db.flashB)
+            else
+                t:Hide(); t:SetVertexColor(1, 1, 1); t:SetAlpha(1)
+            end
+        end
     end
 end
 
-local function RemoveGlow(btn)
-    if not btn then return end
-    if btn.SpellHighlightTexture then
-        btn.SpellHighlightTexture:Hide()
-        btn.SpellHighlightTexture:SetVertexColor(1, 1, 1)
-        btn.SpellHighlightTexture:SetAlpha(1)
-    end
-    if btn.Flash then
-        btn.Flash:Hide()
-        btn.Flash:SetVertexColor(1, 1, 1)
-        btn.Flash:SetAlpha(1)
-    end
+-- ── Main update ───────────────────────────────────────────────────────────────
+
+local function ClearGlows()
+    for _, btn in pairs(activeGlows) do SetGlow(btn, false) end
+    wipe(activeGlows)
 end
-
---#endregion
-
---#region ─── Main update ─────────────────────────────────────────────────────────────
 
 local function ScheduleUpdate()
-    if InCombatLockdown() then
-        for _, btn in pairs(activeGlows) do RemoveGlow(btn) end
-        wipe(activeGlows)
-        return
-    end
-    if EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive() then
-        for _, btn in pairs(activeGlows) do RemoveGlow(btn) end
-        wipe(activeGlows)
-        return
+    if InCombatLockdown() or (EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive()) then
+        ClearGlows(); return
     end
     if pendingUpdate then return end
     pendingUpdate = true
     C_Timer.After(0.1, function()
         pendingUpdate = false
         if EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive() then return end
-        for _, btn in pairs(activeGlows) do RemoveGlow(btn) end
-        wipe(activeGlows)
-        for _, check in ipairs(checks) do
-            local slot = db[check.key]
-            if slot then
-                local btn = FindButton(slot)
-                if btn and not check.hasFunc() then
-                    ApplyGlow(btn)
-                    activeGlows[check.key] = btn
+        ClearGlows()
+        for _, c in ipairs(checks) do
+            if db[c.key] then
+                local btn = FindButton(db[c.key])
+                if btn and not c.fn() then
+                    SetGlow(btn, true)
+                    activeGlows[c.key] = btn
                 end
             end
         end
     end)
 end
 
---#endregion
-
---#region ─── Events ──────────────────────────────────────────────────────────────────
+-- ── Events ────────────────────────────────────────────────────────────────────
 
 local events = CreateFrame("Frame")
 events:RegisterEvent("ADDON_LOADED")
@@ -249,29 +187,18 @@ events:SetScript("OnEvent", function(self, event, arg1)
         if arg1 ~= ADDON_NAME then return end
         PrepDB = PrepDB or {}
         db = PrepDB
-        for k, v in pairs(defaults) do
-            if db[k] == nil then db[k] = v end
-        end
-        self:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
-        self:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
-        self:RegisterEvent("PLAYER_ENTERING_WORLD")
-        self:RegisterEvent("PLAYER_REGEN_ENABLED")
-        self:RegisterEvent("PLAYER_REGEN_DISABLED")
-        self:RegisterEvent("UNIT_AURA")
-        self:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
-        self:RegisterEvent("GROUP_ROSTER_UPDATE")
-        self:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
-        self:RegisterEvent("UNIT_PET")
-        self:RegisterEvent("PET_JOURNAL_LIST_UPDATE")
-        self:RegisterEvent("ACTIONBAR_PAGE_CHANGED")
+        for k, v in pairs(defaults) do if db[k] == nil then db[k] = v end end
+        for _, e in ipairs({
+            "EDIT_MODE_LAYOUTS_UPDATED", "ACTIVE_TALENT_GROUP_CHANGED", "PLAYER_ENTERING_WORLD",
+            "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "UNIT_AURA", "ACTIONBAR_SLOT_CHANGED",
+            "GROUP_ROSTER_UPDATE", "PLAYER_EQUIPMENT_CHANGED", "UNIT_PET",
+            "PET_JOURNAL_LIST_UPDATE", "ACTIONBAR_PAGE_CHANGED",
+        }) do self:RegisterEvent(e) end
         self:UnregisterEvent("ADDON_LOADED")
     elseif event == "PLAYER_REGEN_ENABLED" then
-        C_Timer.After(1.0, function()
-            if not InCombatLockdown() then ScheduleUpdate() end
-        end)
+        C_Timer.After(1.0, function() if not InCombatLockdown() then ScheduleUpdate() end end)
     elseif event == "UNIT_AURA" then
-        local unit = arg1
-        if unit == "player" or (db.checkGroup and (unit:find("party") or unit:find("raid"))) then
+        if arg1 == "player" or (db.checkGroup and (arg1:find("party") or arg1:find("raid"))) then
             ScheduleUpdate()
         end
     else
@@ -279,160 +206,105 @@ events:SetScript("OnEvent", function(self, event, arg1)
     end
 end)
 
---#endregion
+-- ── Lookup helpers ────────────────────────────────────────────────────────────
 
---#region ─── Name/link → ID helpers ──────────────────────────────────────────────────
-
-local function FindSpellIDByName(searchName)
-    searchName = searchName:lower()
+local function FindSpellIDByName(search)
+    search = search:lower()
     for i = 1, 1000 do
         local info = C_SpellBook.GetSpellBookItemInfo(i, Enum.SpellBookSpellBank.Player)
         if not info then break end
         if info.spellID and info.spellID > 0 then
             local name = C_Spell.GetSpellName(info.spellID)
-            if name and name:lower() == searchName then
-                return info.spellID
-            end
+            if name and name:lower() == search then return info.spellID end
         end
     end
     if C_Spell.GetSpellIDForSpellIdentifier then
-        local id = C_Spell.GetSpellIDForSpellIdentifier(searchName)
+        local id = C_Spell.GetSpellIDForSpellIdentifier(search)
         if id and id > 0 then return id end
     end
-    return nil
 end
 
-local function FindItemIDByName(searchName)
-    searchName = searchName:lower()
+local function FindItemIDByName(search)
+    search = search:lower()
     for bag = 0, NUM_BAG_SLOTS do
         for slot = 1, C_Container.GetContainerNumSlots(bag) do
             local info = C_Container.GetContainerItemInfo(bag, slot)
             if info and info.itemID then
                 local name = C_Item.GetItemNameByID(info.itemID)
-                if name and name:lower() == searchName then
-                    return info.itemID
-                end
+                if name and name:lower() == search then return info.itemID end
             end
         end
     end
-    return nil
 end
 
 local function ParseItemArg(arg)
-    local linkID = arg:match("|Hitem:(%d+):")
-    if linkID then return tonumber(linkID) end
-    local bracketed = arg:match("^%[(.+)%]$")
-    if bracketed then arg = bracketed end
-    local id = tonumber(arg)
-    if id then return id end
-    return FindItemIDByName(arg)
+    return tonumber(arg:match("|Hitem:(%d+):")) or
+        tonumber(arg:match("^%[(.+)%]$") and arg:match("^%[(.+)%]$") or arg) or
+        FindItemIDByName(arg)
 end
 
 local function ParseSpellArg(arg)
-    local linkID = arg:match("|Hspell:(%d+)")
-    if linkID then return tonumber(linkID) end
-    local id = tonumber(arg)
-    if id then return id end
-    return FindSpellIDByName(arg)
+    return tonumber(arg:match("|Hspell:(%d+)")) or tonumber(arg) or FindSpellIDByName(arg)
 end
 
-local function FindPetGUIDByName(searchName)
-    searchName = searchName:lower()
-    local numPets = C_PetJournal.GetNumPets()
-    for i = 1, numPets do
-        local petGUID, _, _, customName, _, _, _, speciesName = C_PetJournal.GetPetInfoByIndex(i)
-        if petGUID then
-            local matchCustom  = customName and customName:lower() == searchName
-            local matchSpecies = speciesName and speciesName:lower() == searchName
-            if matchCustom or matchSpecies then
-                local displayName = (customName and customName ~= "") and customName or speciesName
-                local _, spellID = C_PetJournal.GetPetInfoByPetID(petGUID)
-                return petGUID, displayName, spellID
+local function FindPetGUIDByName(search)
+    search = search:lower()
+    for i = 1, C_PetJournal.GetNumPets() do
+        local guid, _, _, cn, _, _, _, sn = C_PetJournal.GetPetInfoByIndex(i)
+        if guid then
+            if (cn and cn:lower() == search) or (sn and sn:lower() == search) then
+                local displayName = (cn and cn ~= "") and cn or sn
+                local _, spellID = C_PetJournal.GetPetInfoByPetID(guid)
+                return guid, displayName, spellID
             end
         end
     end
-    return nil, nil, nil
 end
 
---#endregion
-
---#region ─── Status display ──────────────────────────────────────────────────────────
+-- ── Slash commands ────────────────────────────────────────────────────────────
 
 local function SlotStatus(key, label)
-    local slot = db[key]
-    if not slot then
-        return label .. ": |cffaaaaaa(not set)|r"
-    elseif slot.spellID then
-        local name = C_Spell.GetSpellName(slot.spellID) or ("spell " .. slot.spellID)
-        return label .. ": |cffffff00" .. name .. "|r (spell " .. slot.spellID .. ")"
-    elseif slot.itemID then
-        local name = C_Item.GetItemNameByID(slot.itemID) or ("item " .. slot.itemID)
-        return label .. ": |cffffff00" .. name .. "|r (item " .. slot.itemID .. ")"
-    elseif slot.petGUID then
-        local _, _, _, cn, _, _, _, sn = C_PetJournal.GetPetInfoByPetID(slot.petGUID)
-        local petName = (cn and cn ~= "") and cn or sn or "unknown pet"
-        return label .. ": |cffffff00" .. petName .. "|r (pet journal)"
+    local s = db[key]
+    if not s then return label .. ": |cffaaaaaa(not set)|r" end
+    if s.spellID then
+        local n = C_Spell.GetSpellName(s.spellID) or ("spell " .. s.spellID)
+        return label .. ": |cffffff00" .. n .. "|r (spell " .. s.spellID .. ")"
+    elseif s.itemID then
+        local n = C_Item.GetItemNameByID(s.itemID) or ("item " .. s.itemID)
+        return label .. ": |cffffff00" .. n .. "|r (item " .. s.itemID .. ")"
+    elseif s.petGUID then
+        local _, _, _, cn, _, _, _, sn = C_PetJournal.GetPetInfoByPetID(s.petGUID)
+        return label .. ": |cffffff00" .. ((cn and cn ~= "") and cn or sn or "unknown") .. "|r (pet)"
     end
     return label .. ": |cffff4444(unknown)|r"
 end
 
 local function ShowStatus()
-    print("|cff00ccff[Prep]|r Current status:")
-    print("  " .. SlotStatus("slotBuff", "Buff"))
-    print("  " .. SlotStatus("slotFood", "Food"))
-    print("  " .. SlotStatus("slotWeapon", "Weapon"))
-    print("  " .. SlotStatus("slotFlask", "Flask"))
-    print("  " .. SlotStatus("slotRune", "Rune"))
-    print("  " .. SlotStatus("slotPet", "Pet"))
+    print("|cff00ccff[Prep]|r Current settings:")
+    for _, t in ipairs({ { "slotBuff", "Buff" }, { "slotFood", "Food" }, { "slotWeapon", "Weapon" },
+        { "slotFlask", "Flask" }, { "slotRune", "Rune" }, { "slotPet", "Pet" } }) do
+        print("  " .. SlotStatus(t[1], t[2]))
+    end
     print("  Group check: " .. tostring(db.checkGroup))
-    print(string.format("  Highlight: alpha=%.2f  color=%.2f/%.2f/%.2f", db.flashAlpha, db.flashR, db.flashG,
-        db.flashB))
-end
-
---#endregion
-
---#region ─── Slash commands ──────────────────────────────────────────────────────────
-
-local function ResetToDefaults()
-    -- Clear all current glows first
-    for _, btn in pairs(activeGlows) do
-        RemoveGlow(btn)
-    end
-    wipe(activeGlows)
-
-    -- Completely wipe and rebuild the database
-    wipe(PrepDB)
-    db = PrepDB
-
-    -- Set all defaults
-    for k, v in pairs(defaults) do
-        db[k] = v
-    end
-
-    -- Force a full update after a short delay
-    C_Timer.After(0.2, function()
-        ScheduleUpdate()
-        -- Show status after reset
-        ShowStatus()
-    end)
-
-    print("|cff00ccff[Prep]|r All settings reset to defaults")
+    print(("  Highlight: alpha=%.2f  color=%.2f/%.2f/%.2f"):format(db.flashAlpha, db.flashR, db.flashG, db.flashB))
 end
 
 local function PrintHelp()
     print("|cff00ccff[Prep]|r Commands:")
-    print("  |cffffff00/prep buff <spell id/name/link>|r - Battle Shout, Arcane Intellect, etc")
-    print("  |cffffff00/prep food <item id/name/link>|r - food item")
-    print("  |cffffff00/prep weapon <item id/name/link>|r - weapon enchant item")
-    print("  |cffffff00/prep flask <item id/name/link>|r - flask item")
-    print("  |cffffff00/prep rune <item id/name/link>|r - augment rune item")
-    print("  |cffffff00/prep pet <name>|r - cosmetic pet (custom or species name)")
-    print("  |cffffff00/prep clear <slot>|r - buff/food/weapon/flask/rune/pet")
-    print("  |cffffff00/prep reset|r - reset all settings to defaults (shows status)")
-    print("  |cffffff00/prep group|r - toggle group buff check")
-    print("  |cffffff00/prep alpha <0.1-1.0>|r - highlight alpha")
-    print("  |cffffff00/prep color <r> <g> <b>|r - highlight color (0.0-1.0)")
-    print("  |cffffff00/prep status|r - show current settings")
+    for _, l in ipairs({
+        "/prep buff <spell id/name/link>",
+        "/prep food <item id/name/link>",
+        "/prep weapon <item id/name/link>",
+        "/prep flask <item id/name/link>",
+        "/prep rune <item id/name/link>",
+        "/prep pet <name>",
+        "/prep clear <buff/food/weapon/flask/rune/pet>",
+        "/prep reset",
+        "/prep group  - toggle group buff check",
+        "/prep alpha <0.1-1.0>",
+        "/prep color <r> <g> <b>  (0.0-1.0)",
+        "/prep status",
+    }) do print("  |cffffff00" .. l .. "|r") end
 end
 
 SLASH_PREP1 = "/prep"
@@ -442,96 +314,58 @@ SlashCmdList["PREP"] = function(msg)
     cmd = cmd and cmd:lower() or ""
     local arg = origArg and origArg:lower() or ""
 
-    if cmd == "buff" then
+    -- item-slot commands
+    local itemSlots = { food = "slotFood", weapon = "slotWeapon", flask = "slotFlask", rune = "slotRune" }
+    if itemSlots[cmd] then
         if origArg == "" then
-            print("|cff00ccff[Prep]|r Usage: /prep buff <spell id, name, or link>")
-            return
+            print("|cff00ccff[Prep]|r Usage: /prep " .. cmd .. " <item id, name, or link>"); return
+        end
+        local id = ParseItemArg(origArg)
+        if not id then
+            print("|cff00ccff[Prep]|r Item not found: |cffffff00" .. origArg .. "|r  (must be in bags)"); return
+        end
+        db[itemSlots[cmd]] = { itemID = id }
+        print("|cff00ccff[Prep]|r " ..
+        cmd:sub(1, 1):upper() .. cmd:sub(2) .. " set to: |cffffff00" .. (C_Item.GetItemNameByID(id) or id) .. "|r")
+        ScheduleUpdate()
+    elseif cmd == "buff" then
+        if origArg == "" then
+            print("|cff00ccff[Prep]|r Usage: /prep buff <spell id, name, or link>"); return
         end
         local id = ParseSpellArg(origArg)
         if not id then
-            print("|cff00ccff[Prep]|r Spell not found: |cffffff00" .. origArg .. "|r")
-            return
+            print("|cff00ccff[Prep]|r Spell not found: |cffffff00" .. origArg .. "|r"); return
         end
         db.slotBuff = { spellID = id }
         print("|cff00ccff[Prep]|r Buff set to: |cffffff00" .. (C_Spell.GetSpellName(id) or id) .. "|r")
         ScheduleUpdate()
-    elseif cmd == "food" then
-        if origArg == "" then
-            print("|cff00ccff[Prep]|r Usage: /prep food <item id, name, or link>")
-            return
-        end
-        local id = ParseItemArg(origArg)
-        if not id then
-            print("|cff00ccff[Prep]|r Item not found: |cffffff00" .. origArg .. "|r  (must be in bags)")
-            return
-        end
-        db.slotFood = { itemID = id }
-        print("|cff00ccff[Prep]|r Food set to: |cffffff00" .. (C_Item.GetItemNameByID(id) or id) .. "|r")
-        ScheduleUpdate()
-    elseif cmd == "weapon" then
-        if origArg == "" then
-            print("|cff00ccff[Prep]|r Usage: /prep weapon <item id, name, or link>")
-            return
-        end
-        local id = ParseItemArg(origArg)
-        if not id then
-            print("|cff00ccff[Prep]|r Item not found: |cffffff00" .. origArg .. "|r  (must be in bags)")
-            return
-        end
-        db.slotWeapon = { itemID = id }
-        print("|cff00ccff[Prep]|r Weapon set to: |cffffff00" .. (C_Item.GetItemNameByID(id) or id) .. "|r")
-        ScheduleUpdate()
-    elseif cmd == "flask" then
-        if origArg == "" then
-            print("|cff00ccff[Prep]|r Usage: /prep flask <item id, name, or link>")
-            return
-        end
-        local id = ParseItemArg(origArg)
-        if not id then
-            print("|cff00ccff[Prep]|r Item not found: |cffffff00" .. origArg .. "|r  (must be in bags)")
-            return
-        end
-        db.slotFlask = { itemID = id }
-        print("|cff00ccff[Prep]|r Flask set to: |cffffff00" .. (C_Item.GetItemNameByID(id) or id) .. "|r")
-        ScheduleUpdate()
-    elseif cmd == "rune" then
-        if origArg == "" then
-            print("|cff00ccff[Prep]|r Usage: /prep rune <item id, name, or link>")
-            return
-        end
-        local id = ParseItemArg(origArg)
-        if not id then
-            print("|cff00ccff[Prep]|r Item not found: |cffffff00" .. origArg .. "|r  (must be in bags)")
-            return
-        end
-        db.slotRune = { itemID = id }
-        print("|cff00ccff[Prep]|r Rune set to: |cffffff00" .. (C_Item.GetItemNameByID(id) or id) .. "|r")
-        ScheduleUpdate()
     elseif cmd == "pet" then
         if origArg == "" then
-            print("|cff00ccff[Prep]|r Usage: /prep pet <name>  e.g. /prep pet Zergling")
-            return
+            print("|cff00ccff[Prep]|r Usage: /prep pet <name>"); return
         end
-        local petGUID, petName, spellID = FindPetGUIDByName(origArg)
-        if not petGUID then
-            print("|cff00ccff[Prep]|r Pet not found: |cffffff00" ..
-                origArg .. "|r  (check spelling, must be in your collection)")
-            return
+        local guid, name, spellID = FindPetGUIDByName(origArg)
+        if not guid then
+            print("|cff00ccff[Prep]|r Pet not found: |cffffff00" .. origArg .. "|r"); return
         end
-        db.slotPet = { petGUID = petGUID, spellID = spellID }
-        print("|cff00ccff[Prep]|r Pet set to: |cffffff00" .. petName .. "|r")
+        db.slotPet = { petGUID = guid, spellID = spellID }
+        print("|cff00ccff[Prep]|r Pet set to: |cffffff00" .. name .. "|r")
         ScheduleUpdate()
     elseif cmd == "clear" then
-        local slotKey = "slot" .. arg:sub(1, 1):upper() .. arg:sub(2)
-        if db[slotKey] ~= nil then
-            db[slotKey] = nil
+        local k = "slot" .. arg:sub(1, 1):upper() .. arg:sub(2)
+        if db[k] ~= nil then
+            db[k] = nil
             print("|cff00ccff[Prep]|r Cleared: " .. arg)
             ScheduleUpdate()
         else
-            print("|cff00ccff[Prep]|r Unknown slot: " .. arg .. "  (buff / food / weapon / flask / rune / pet)")
+            print("|cff00ccff[Prep]|r Unknown slot: " .. arg .. "  (buff/food/weapon/flask/rune/pet)")
         end
     elseif cmd == "reset" then
-        ResetToDefaults()
+        ClearGlows(); wipe(PrepDB); db = PrepDB
+        for k, v in pairs(defaults) do db[k] = v end
+        C_Timer.After(0.2, function()
+            ScheduleUpdate(); ShowStatus()
+        end)
+        print("|cff00ccff[Prep]|r All settings reset to defaults")
     elseif cmd == "group" then
         db.checkGroup = not db.checkGroup
         print("|cff00ccff[Prep]|r Group buff check: " .. (db.checkGroup and "|cff00ff00ON|r" or "|cffff4444OFF|r"))
@@ -539,8 +373,7 @@ SlashCmdList["PREP"] = function(msg)
     elseif cmd == "alpha" then
         local v = tonumber(origArg)
         if not v or v < 0.1 or v > 1.0 then
-            print("|cff00ccff[Prep]|r Usage: /prep alpha <0.1-1.0>")
-            return
+            print("|cff00ccff[Prep]|r Usage: /prep alpha <0.1-1.0>"); return
         end
         db.flashAlpha = v
         print("|cff00ccff[Prep]|r Alpha set to " .. v)
@@ -549,11 +382,10 @@ SlashCmdList["PREP"] = function(msg)
         local r, g, b = origArg:match("^(%S+)%s+(%S+)%s+(%S+)$")
         r, g, b = tonumber(r), tonumber(g), tonumber(b)
         if not r or not g or not b then
-            print("|cff00ccff[Prep]|r Usage: /prep color <r> <g> <b>  (0.0-1.0)")
-            return
+            print("|cff00ccff[Prep]|r Usage: /prep color <r> <g> <b>"); return
         end
         db.flashR, db.flashG, db.flashB = r, g, b
-        print(string.format("|cff00ccff[Prep]|r Color set to %.2f %.2f %.2f", r, g, b))
+        print(("|cff00ccff[Prep]|r Color set to %.2f %.2f %.2f"):format(r, g, b))
         ScheduleUpdate()
     elseif cmd == "status" then
         ShowStatus()
@@ -561,5 +393,3 @@ SlashCmdList["PREP"] = function(msg)
         PrintHelp()
     end
 end
-
---#endregion

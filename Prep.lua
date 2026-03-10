@@ -3,7 +3,7 @@
 
 local ADDON_NAME = "Prep"
 
-local defaults   = {
+local defaults = {
     checkGroup = true,
     flashAlpha = 1.0,
     flashR     = 1.0,
@@ -17,9 +17,8 @@ local defaults   = {
     slotPet    = nil,
 }
 
-
 local db
-local activeGlows   = {}
+local activeGlows = {}
 local pendingUpdate = false
 
 --#region ─── Slot → button frame ─────────────────────────────────────────────────────
@@ -264,6 +263,7 @@ events:SetScript("OnEvent", function(self, event, arg1)
         self:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
         self:RegisterEvent("UNIT_PET")
         self:RegisterEvent("PET_JOURNAL_LIST_UPDATE")
+        self:RegisterEvent("ACTIONBAR_PAGE_CHANGED")
         self:UnregisterEvent("ADDON_LOADED")
     elseif event == "PLAYER_REGEN_ENABLED" then
         C_Timer.After(1.0, function()

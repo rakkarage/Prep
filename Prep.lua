@@ -1,7 +1,7 @@
 -- Prep: highlights action bar buttons for missing buff, food, weapon enchant, flask, rune, and pet.
 
 local ADDON_NAME = "Prep"
-local db, activeGlows, pendingUpdate = nil, {}, false
+local activeGlows, pendingUpdate = {}, false
 
 local defaults = {
     checkGroup = true,
@@ -16,6 +16,8 @@ local defaults = {
     slotRune = nil,
     slotPet = nil,
 }
+
+local db = CopyTable(defaults)
 
 -- ── Slot → button frame ───────────────────────────────────────────────────────
 
@@ -91,7 +93,8 @@ end
 local function HasFlask()
     if not db.slotFlask or not db.slotFlask.itemID then return true end
     local name = C_Item.GetItemNameByID(db.slotFlask.itemID)
-    return name and AuraUtil.FindAuraByName(name, "player", "HELPFUL") ~= nil or true
+    if not name then return true end
+    return AuraUtil.FindAuraByName(name, "player", "HELPFUL") ~= nil
 end
 
 local function HasRune()
@@ -198,7 +201,7 @@ events:SetScript("OnEvent", function(self, event, arg1)
     elseif event == "PLAYER_REGEN_ENABLED" then
         C_Timer.After(1.0, function() if not InCombatLockdown() then ScheduleUpdate() end end)
     elseif event == "UNIT_AURA" then
-        if arg1 == "player" or (db.checkGroup and (arg1:find("party") or arg1:find("raid"))) then
+        if arg1 == "player" or (db and db.checkGroup and (arg1:find("party") or arg1:find("raid"))) then
             ScheduleUpdate()
         end
     else
@@ -357,7 +360,10 @@ SlashCmdList["PREP"] = function(msg)
     local arg = origArg and origArg:lower() or ""
 
     local cmd = ResolveCmd(rawCmd)
-    if cmd == false then return end -- ambiguous, message already printed
+    if cmd == false then return end
+    if cmd == nil then
+        PrintHelp(); return
+    end
 
     if itemSlots[cmd] then
         if origArg == "" then
@@ -369,8 +375,8 @@ SlashCmdList["PREP"] = function(msg)
         end
         db[itemSlots[cmd]] = { itemID = id }
         local name = C_Item.GetItemNameByID(id) or tostring(id)
-        print("|cff00ccff[Prep]|r " ..
-        cmd:sub(1, 1):upper() .. cmd:sub(2) .. " set to: " .. ItemIcon(id) .. "|cffffff00" .. name .. "|r")
+        local label = (cmd or ""):sub(1, 1):upper() .. (cmd or ""):sub(2)
+        print("|cff00ccff[Prep]|r " .. label .. " set to: " .. ItemIcon(id) .. "|cffffff00" .. name .. "|r")
         ScheduleUpdate()
     elseif cmd == "buff" then
         if origArg == "" then

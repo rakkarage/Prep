@@ -2,13 +2,12 @@
 
 ![screenshot](screenshot.png)
 
+World of Warcraft addon.
 Highlights action bar buttons for missing buff, food, weapon enchant, flask and rune.
 
-- Blizzard kinda does this for some buffs already.
-	- only in party if anyone missing it
-	- only for (certain?) buffs
-	- only if have single button assistant highlight enabled
+- Blizzard kinda does this for some buffs already. (blue outline on battle shout if anyone missing it (maybe need single button assistant on))
 - Only works outside combat currently.
+- Not work well in PvP I think consumables (food, weapon buff, flask, and rune) are ignored during pvp not instead of stripped, but the rest (buff, pet), work i think.
 
 ## Usage
 

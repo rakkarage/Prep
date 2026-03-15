@@ -4,7 +4,7 @@
 ## Category: User Interface
 ## Notes: Highlights action bar buttons for missing buff, food, weapon enchant, flask and rune.
 ## Author: rakkarage
-## SavedVariables: PrepDB
+## SavedVariablesPerCharacter: PrepDB
 ## IconTexture: Interface/Icons/ability_warrior_battleshout
 
 Prep.lua

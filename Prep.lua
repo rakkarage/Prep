@@ -57,9 +57,14 @@ end
 local function FindButton(slot)
     if not slot then return nil end
     if slot.petGUID then
+        local spellID = slot.spellID
+        if not spellID then
+            _, spellID = C_PetJournal.GetPetInfoByPetID(slot.petGUID)
+        end
+        if not spellID then return nil end
         for s = 1, 180 do
             local t, id = GetActionInfo(s)
-            if t == "summonpet" and id == slot.petGUID then
+            if t == "summonpet" and id == spellID then
                 local btn = GetButtonForActionSlot(s)
                 if btn then return btn end
             end
@@ -253,10 +258,11 @@ end
 local function FindPetGUIDByName(search)
     search = search:lower()
     for i = 1, C_PetJournal.GetNumPets() do
-        local guid, _, _, cn, _, _, _, sn = C_PetJournal.GetPetInfoByIndex(i)
+        local guid = C_PetJournal.GetPetInfoByIndex(i)
         if guid then
-            if (cn and cn:lower() == search) or (sn and sn:lower() == search) then
-                local displayName = (cn and cn ~= "") and cn or sn
+            local _, customName, _, _, _, _, _, speciesName, _ = C_PetJournal.GetPetInfoByPetID(guid)
+            local displayName = (customName and customName ~= "") and customName or speciesName
+            if displayName and displayName:lower() == search then
                 local _, spellID = C_PetJournal.GetPetInfoByPetID(guid)
                 return guid, displayName, spellID
             end
@@ -277,8 +283,8 @@ local function SpellIcon(id) return IconTag(id and C_Spell.GetSpellTexture(id)) 
 local function ItemIcon(id) return IconTag(id and select(10, GetItemInfo(id))) end
 local function PetIcon(guid)
     if not guid then return "" end
-    local iconFileID = select(16, C_PetJournal.GetPetInfoByPetID(guid))
-    return IconTag(iconFileID)
+    local _, _, _, _, _, _, _, _, icon = C_PetJournal.GetPetInfoByPetID(guid)
+    return IconTag(icon)
 end
 
 -- ── Status display ────────────────────────────────────────────────────────────
@@ -286,16 +292,16 @@ end
 local function SlotStatus(key, label)
     local s = db[key]
     if not s then return label .. ": |cffaaaaaa(not set)|r" end
-    if s.spellID then
+    if s.petGUID then
+        local _, customName, _, _, _, _, _, speciesName, _ = C_PetJournal.GetPetInfoByPetID(s.petGUID)
+        local name = (customName and customName ~= "") and customName or speciesName or "unknown"
+        return label .. ": " .. PetIcon(s.petGUID) .. "|cffffff00" .. name .. "|r"
+    elseif s.spellID then
         local name = C_Spell.GetSpellName(s.spellID) or ("spell " .. s.spellID)
         return label .. ": " .. SpellIcon(s.spellID) .. "|cffffff00" .. name .. "|r"
     elseif s.itemID then
         local name = C_Item.GetItemNameByID(s.itemID) or ("item " .. s.itemID)
         return label .. ": " .. ItemIcon(s.itemID) .. "|cffffff00" .. name .. "|r"
-    elseif s.petGUID then
-        local _, _, _, cn, _, _, _, sn = C_PetJournal.GetPetInfoByPetID(s.petGUID)
-        local name = (cn and cn ~= "") and cn or sn or "unknown"
-        return label .. ": " .. PetIcon(s.petGUID) .. "|cffffff00" .. name .. "|r"
     end
     return label .. ": |cffff4444(unknown)|r"
 end
@@ -395,8 +401,8 @@ SlashCmdList["PREP"] = function(msg)
             print("|cff00ccff[Prep]|r Usage: /prep pet <name>"); return
         end
         local guid, name, spellID = FindPetGUIDByName(origArg)
-        if not guid then
-            print("|cff00ccff[Prep]|r Pet not found: |cffffff00" .. origArg .. "|r"); return
+        if not guid or not spellID then
+            print("|cff00ccff[Prep]|r Pet not found or has no summon spell: |cffffff00" .. origArg .. "|r"); return
         end
         db.slotPet = { petGUID = guid, spellID = spellID }
         print("|cff00ccff[Prep]|r Pet set to: " .. PetIcon(guid) .. "|cffffff00" .. name .. "|r")

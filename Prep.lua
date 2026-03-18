@@ -1,4 +1,5 @@
--- Prep: highlights action bar buttons for missing buff, food, weapon enchant, flask, rune, and pet.
+-- Prep: highlights action bar buttons for missing buff, food, weapon enchant, flask, rune, pet, and combat pet.
+-- Combat pet check is automatic for Hunter, Warlock, and Death Knight — no configuration needed.
 
 local ADDON_NAME = "Prep"
 local activeGlows, pendingUpdate = {}, false
@@ -17,7 +18,7 @@ local defaults = {
 	slotPet = nil,
 }
 
-local db = CopyTable(defaults)
+local db = {}
 
 -- ── Slot → button frame ───────────────────────────────────────────────────────
 
@@ -151,6 +152,61 @@ local checks = {
 	},
 }
 
+-- ── Auto combat pet (Hunter / Warlock / Death Knight) ─────────────────────────
+
+-- Ordered by preference: the first spell found on bars wins.
+local COMBAT_PET_SPELLS = {
+	HUNTER      = { "Call Pet 1", "Call Pet 2", "Call Pet 3", "Call Pet 4", "Call Pet 5" },
+	WARLOCK     = { "Summon Imp", "Summon Voidwalker", "Summon Succubus", "Summon Felhunter",
+		"Summon Felguard", "Summon Incubus", "Summon Darkglare",
+		"Summon Demonic Tyrant", "Summon Infernal", "Summon Sayaad" },
+	DEATHKNIGHT = { "Raise Dead" },
+}
+
+local autoCombatPetSpellIDs = nil -- nil = not a pet class; {} = pet class, populated on first update
+
+local function InitAutoCombatPet()
+	local class = UnitClassBase("player")
+	local spellNames = COMBAT_PET_SPELLS[class]
+	if not spellNames then
+		autoCombatPetSpellIDs = nil
+		return
+	end
+	autoCombatPetSpellIDs = {}
+	for _, name in ipairs(spellNames) do
+		local id = C_Spell.GetSpellIDForSpellIdentifier and C_Spell.GetSpellIDForSpellIdentifier(name)
+		if not id then
+			-- fall back to spellbook scan
+			for i = 1, 1000 do
+				local info = C_SpellBook.GetSpellBookItemInfo(i, Enum.SpellBookSpellBank.Player)
+				if not info then break end
+				if info.spellID and C_Spell.GetSpellName(info.spellID) == name then
+					id = info.spellID; break
+				end
+			end
+		end
+		if id and id > 0 then
+			autoCombatPetSpellIDs[#autoCombatPetSpellIDs + 1] = id
+		end
+	end
+end
+
+-- Returns the first visible bar button matching any known summon spell, or nil.
+local function FindCombatPetButton()
+	if not autoCombatPetSpellIDs or #autoCombatPetSpellIDs == 0 then return nil end
+	for s = 1, 180 do
+		local t, id = GetActionInfo(s)
+		if t == "spell" then
+			for _, sid in ipairs(autoCombatPetSpellIDs) do
+				if id == sid then
+					local btn = GetButtonForActionSlot(s)
+					if btn then return btn end
+				end
+			end
+		end
+	end
+end
+
 -- ── Glow ──────────────────────────────────────────────────────────────────────
 
 local function SetGlow(btn, show)
@@ -193,6 +249,14 @@ local function ScheduleUpdate()
 				end
 			end
 		end
+		-- Auto combat pet: highlight summon button if pet is missing
+		if autoCombatPetSpellIDs and not UnitExists("pet") then
+			local btn = FindCombatPetButton()
+			if btn then
+				SetGlow(btn, true)
+				activeGlows["__combatPet"] = btn
+			end
+		end
 	end)
 end
 
@@ -206,6 +270,7 @@ events:SetScript("OnEvent", function(self, event, arg1)
 		PrepDB = PrepDB or {}
 		db = PrepDB
 		for k, v in pairs(defaults) do if db[k] == nil then db[k] = v end end
+		InitAutoCombatPet()
 		for _, e in ipairs({
 			"EDIT_MODE_LAYOUTS_UPDATED", "ACTIVE_TALENT_GROUP_CHANGED", "PLAYER_ENTERING_WORLD",
 			"PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "UNIT_AURA", "ACTIONBAR_SLOT_CHANGED",
@@ -318,9 +383,16 @@ end
 
 local function ShowStatus()
 	print("|cff00ccff[Prep]|r Current settings:")
-	for _, t in ipairs({ { "slotBuff", "Buff" }, { "slotFood", "Food" }, { "slotWeapon", "Weapon" },
-		{ "slotFlask", "Flask" }, { "slotRune", "Rune" }, { "slotPet", "Pet" } }) do
+	for _, t in ipairs({
+		{ "slotBuff",  "Buff" }, { "slotFood", "Food" }, { "slotWeapon", "Weapon" },
+		{ "slotFlask", "Flask" }, { "slotRune", "Rune" }, { "slotPet", "Pet" },
+	}) do
 		print("  " .. SlotStatus(t[1], t[2]))
+	end
+	if autoCombatPetSpellIDs then
+		print("  Combat pet: |cff00ff00auto (enabled)|r")
+	else
+		print("  Combat pet: |cffaaaaaan/a (not a pet class)|r")
 	end
 	print("  Group check: " .. tostring(db.checkGroup))
 	print(("  Highlight: alpha=%.2f  color=%.2f/%.2f/%.2f"):format(db.flashAlpha, db.flashR, db.flashG, db.flashB))
@@ -337,19 +409,21 @@ local function PrintHelp()
 		"/prep flask <item id/name/link>",
 		"/prep rune <item id/name/link>",
 		"/prep pet <name>",
-		"/prep clear <buff|food|weapon|flask|rune|pet>",
+		"/prep clear <buff/food/weapon/flask/rune/pet>  (combat pet is automatic)",
 		"/prep reset",
 		"/prep group  - toggle group buff check",
 		"/prep alpha <0.1-1.0>",
 		"/prep color <r> <g> <b>  (0.0-1.0)",
-		"/prep status",
+		"/prep status  (combat pet check is automatic for Hunter/Warlock/DK)",
 	}) do print("  |cffffff00" .. l .. "|r") end
 end
 
 -- Prefix-match input against all valid commands.
 -- Returns: matched string (success), false (ambiguous, already printed), nil (no match → show help)
-local ALL_CMDS = { "buff", "food", "weapon", "flask", "rune", "pet", "clear", "reset", "group", "alpha", "color",
-	"status" }
+local ALL_CMDS = {
+	"buff", "food", "weapon", "flask", "rune", "pet",
+	"clear", "reset", "group", "alpha", "color", "status",
+}
 
 local function ResolveCmd(input)
 	if input == "" then return nil end

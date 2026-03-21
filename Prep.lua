@@ -259,6 +259,9 @@ local function ScheduleUpdate()
 	pendingUpdate = true
 	C_Timer.After(0.1, function()
 		pendingUpdate = false
+		-- FIX: re-check combat inside the callback, since we may have entered
+		-- combat in the 0.1s window between scheduling and execution
+		if InCombatLockdown() then return end
 		if EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive() then return end
 		ClearGlows()
 		for _, c in ipairs(checks) do
@@ -333,6 +336,8 @@ events:SetScript("OnEvent", function(self, event, arg1)
 			"PET_JOURNAL_LIST_UPDATE", "ACTIONBAR_PAGE_CHANGED",
 		}) do self:RegisterEvent(e) end
 		self:UnregisterEvent("ADDON_LOADED")
+	elseif event == "PLAYER_REGEN_DISABLED" then
+		ClearGlows() -- entering combat: just clear and do nothing
 	elseif event == "PLAYER_REGEN_ENABLED" then
 		C_Timer.After(1.0, function() if not InCombatLockdown() then ScheduleUpdate() end end)
 	elseif event == "UNIT_AURA" then

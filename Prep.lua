@@ -110,17 +110,21 @@ local function HasRune()
 	keywords[#keywords] = nil -- drop last word ("rune" or equivalent)
 	if #keywords == 0 then return true end
 
-	for i = 1, 40 do
-		local aura = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
-		if not aura then break end
+	-- Use ForEachAura to avoid the 40-aura index cap
+	local found = false
+	AuraUtil.ForEachAura("player", "HELPFUL", nil, function(aura)
+		if found then return true end -- stop early
 		if aura.name and not issecretvalue(aura.name) then
 			local buffName = aura.name:lower()
 			for _, kw in ipairs(keywords) do
-				if buffName:find(kw, 1, true) then return true end
+				if buffName:find(kw, 1, true) then
+					found = true
+					return true -- stop iteration
+				end
 			end
 		end
-	end
-	return false
+	end)
+	return found
 end
 
 local checks = {
@@ -139,9 +143,26 @@ local checks = {
 				or AuraUtil.FindAuraByName("Hearty Well Fed", "player", "HELPFUL") ~= nil
 		end
 	},
-	{ key = "slotWeapon", fn = function() return GetWeaponEnchantInfo() == true end },
-	{ key = "slotFlask",  fn = HasFlask },
-	{ key = "slotRune",   fn = HasRune },
+	{
+		-- FIX: check both hands, but only require offhand enchant if the offhand slot
+		-- holds an actual weapon (not a shield or offhand frill).
+		key = "slotWeapon",
+		fn = function()
+			-- Use expiry values (2nd and 4th returns) instead of the boolean returns
+			-- (1st and 3rd), which unreliably return 0 instead of true/false.
+			local _, mhExp, _, ohExp = GetWeaponEnchantInfo()
+			if not mhExp or mhExp == 0 then return false end
+			local ohItem = GetInventoryItemID("player", 17)
+			if ohItem then
+				local _, _, _, _, _, _, _, _, slot = GetItemInfo(ohItem)
+				local ohIsWeapon = slot == "INVTYPE_WEAPONOFFHAND" or slot == "INVTYPE_2HWEAPON"
+				if ohIsWeapon and (not ohExp or ohExp == 0) then return false end
+			end
+			return true
+		end
+	},
+	{ key = "slotFlask", fn = HasFlask },
+	{ key = "slotRune",  fn = HasRune },
 	{
 		key = "slotPet",
 		fn = function()
@@ -260,6 +281,37 @@ local function ScheduleUpdate()
 	end)
 end
 
+-- ── Pet GUID re-resolution ────────────────────────────────────────────────────
+
+-- FIX: GUIDs can go stale between sessions. On load, re-resolve the stored pet
+-- by name (using petName as the source of truth) so we always have a fresh GUID.
+local function RefreshPetGUID()
+	if not db.slotPet then return end
+	local lookupName = db.slotPet.petName
+	if not lookupName then
+		-- legacy entry with no stored name: try to recover the name from the GUID
+		if db.slotPet.petGUID then
+			local _, cn, _, _, _, _, _, sn = C_PetJournal.GetPetInfoByPetID(db.slotPet.petGUID)
+			lookupName = (cn and cn ~= "") and cn or sn
+		end
+		if not lookupName then
+			db.slotPet = nil
+			print("|cff00ccff[Prep]|r Stored pet could not be identified, cleared.")
+			return
+		end
+	end
+
+	-- FindPetGUIDByName is defined later but called after ADDON_LOADED fires,
+	-- so forward reference is fine here.
+	local freshGUID = FindPetGUIDByName(lookupName)
+	if freshGUID then
+		db.slotPet.petGUID = freshGUID
+	else
+		db.slotPet = nil
+		print("|cff00ccff[Prep]|r Pet '" .. lookupName .. "' no longer found in journal, cleared.")
+	end
+end
+
 -- ── Events ────────────────────────────────────────────────────────────────────
 
 local events = CreateFrame("Frame")
@@ -268,8 +320,11 @@ events:SetScript("OnEvent", function(self, event, arg1)
 	if event == "ADDON_LOADED" then
 		if arg1 ~= ADDON_NAME then return end
 		PrepDB = PrepDB or {}
+		-- FIX: set db once and never reassign it, so all closures always see the
+		-- live table. Reset uses wipe() + repopulation instead of reassignment.
 		db = PrepDB
 		for k, v in pairs(defaults) do if db[k] == nil then db[k] = v end end
+		RefreshPetGUID()
 		InitAutoCombatPet()
 		for _, e in ipairs({
 			"EDIT_MODE_LAYOUTS_UPDATED", "ACTIVE_TALENT_GROUP_CHANGED", "PLAYER_ENTERING_WORLD",
@@ -330,7 +385,7 @@ local function ParseSpellArg(arg)
 	return tonumber(arg:match("|Hspell:(%d+)")) or tonumber(arg) or FindSpellIDByName(arg)
 end
 
-local function FindPetGUIDByName(search)
+function FindPetGUIDByName(search) -- note: global so RefreshPetGUID can call it before definition order matters
 	search = search:lower()
 	for i = 1, C_PetJournal.GetNumPets() do
 		local guid, _, _, cn, _, _, _, sn = C_PetJournal.GetPetInfoByIndex(i)
@@ -484,11 +539,13 @@ SlashCmdList["PREP"] = function(msg)
 		if origArg == "" then
 			print("|cff00ccff[Prep]|r Usage: /prep pet <name>"); return
 		end
+		-- FIX: store petName alongside petGUID so re-resolution on next login works
+		-- even if the GUID itself goes stale.
 		local guid, name = FindPetGUIDByName(origArg)
 		if not guid then
 			print("|cff00ccff[Prep]|r Pet not found: |cffffff00" .. origArg .. "|r"); return
 		end
-		db.slotPet = { petGUID = guid }
+		db.slotPet = { petGUID = guid, petName = origArg }
 		print("|cff00ccff[Prep]|r Pet set to: " .. PetIcon(guid) .. "|cffffff00" .. name .. "|r")
 		ScheduleUpdate()
 	elseif cmd == "clear" then
@@ -501,8 +558,11 @@ SlashCmdList["PREP"] = function(msg)
 			print("|cff00ccff[Prep]|r Unknown slot: " .. arg .. "  (buff/food/weapon/flask/rune/pet)")
 		end
 	elseif cmd == "reset" then
-		ClearGlows(); wipe(PrepDB); db = PrepDB
-		for k, v in pairs(defaults) do db[k] = v end
+		-- FIX: wipe and repopulate in-place rather than reassigning db, so all
+		-- closures that captured db upvalue continue pointing at the live table.
+		ClearGlows()
+		wipe(PrepDB)
+		for k, v in pairs(defaults) do PrepDB[k] = v end
 		C_Timer.After(0.2, function()
 			ScheduleUpdate(); ShowStatus()
 		end)

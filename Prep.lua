@@ -444,8 +444,6 @@ local function ShowStatus()
 	end
 	if autoCombatPetSpellIDs then
 		print("  Combat pet: |cff00ff00auto (enabled)|r")
-	else
-		print("  Combat pet: |cffaaaaaan/a (not a pet class)|r")
 	end
 	print("  Group check: " .. tostring(db.checkGroup))
 	print(("  Highlight: alpha=%.2f  color=%.2f/%.2f/%.2f"):format(db.flashAlpha, db.flashR, db.flashG, db.flashB))

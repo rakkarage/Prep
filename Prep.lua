@@ -103,28 +103,21 @@ local function HasRune()
 	local itemName = C_Item.GetItemNameByID(db.slotRune.itemID)
 	if not itemName then return true end
 
-	local keywords = {}
-	for word in itemName:lower():gmatch("%S+") do
-		keywords[#keywords + 1] = word
-	end
-	keywords[#keywords] = nil -- drop last word ("rune" or equivalent)
-	if #keywords == 0 then return true end
+	local searchTerm = itemName:lower():gsub("%s*%S+%s*$", ""):gsub("%s*%S+%s*$", "")
+	if searchTerm == "" then return true end
 
-	-- Use ForEachAura to avoid the 40-aura index cap
-	local found = false
-	AuraUtil.ForEachAura("player", "HELPFUL", nil, function(aura)
-		if found then return true end -- stop early
+	local i = 1
+	while true do
+		local aura = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
+		if not aura then break end
 		if aura.name and not issecretvalue(aura.name) then
-			local buffName = aura.name:lower()
-			for _, kw in ipairs(keywords) do
-				if buffName:find(kw, 1, true) then
-					found = true
-					return true -- stop iteration
-				end
+			if aura.name:lower():find(searchTerm, 1, true) then
+				return true
 			end
 		end
-	end)
-	return found
+		i = i + 1
+	end
+	return false
 end
 
 local checks = {

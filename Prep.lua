@@ -281,6 +281,8 @@ end
 
 -- FIX: GUIDs can go stale between sessions. On load, re-resolve the stored pet
 -- by name (using petName as the source of truth) so we always have a fresh GUID.
+-- This is deferred to PET_JOURNAL_LIST_UPDATE because the journal may not be
+-- populated yet at ADDON_LOADED time.
 local function RefreshPetGUID()
 	if not db.slotPet then return end
 	local lookupName = db.slotPet.petName
@@ -310,6 +312,12 @@ end
 
 -- ── Events ────────────────────────────────────────────────────────────────────
 
+-- FIX: flag set at ADDON_LOADED, consumed on the first PET_JOURNAL_LIST_UPDATE.
+-- This ensures RefreshPetGUID runs only after the journal is fully populated,
+-- avoiding false "pet not found" clears that happened when the journal wasn't
+-- ready yet at ADDON_LOADED time.
+local needsPetRefresh = false
+
 local events = CreateFrame("Frame")
 events:RegisterEvent("ADDON_LOADED")
 events:SetScript("OnEvent", function(self, event, arg1)
@@ -320,7 +328,9 @@ events:SetScript("OnEvent", function(self, event, arg1)
 		-- live table. Reset uses wipe() + repopulation instead of reassignment.
 		db = PrepDB
 		for k, v in pairs(defaults) do if db[k] == nil then db[k] = v end end
-		RefreshPetGUID()
+		-- FIX: defer pet GUID refresh until PET_JOURNAL_LIST_UPDATE fires,
+		-- because the journal is not reliably populated at ADDON_LOADED time.
+		needsPetRefresh = true
 		InitAutoCombatPet()
 		for _, e in ipairs({
 			"EDIT_MODE_LAYOUTS_UPDATED", "ACTIVE_TALENT_GROUP_CHANGED", "PLAYER_ENTERING_WORLD",
@@ -333,10 +343,19 @@ events:SetScript("OnEvent", function(self, event, arg1)
 		ClearGlows() -- entering combat: just clear and do nothing
 	elseif event == "PLAYER_REGEN_ENABLED" then
 		C_Timer.After(1.0, function() if not InCombatLockdown() then ScheduleUpdate() end end)
+	elseif event == "PET_JOURNAL_LIST_UPDATE" then
+		if needsPetRefresh then
+			needsPetRefresh = false
+			RefreshPetGUID()
+		end
+		ScheduleUpdate()
 	elseif event == "UNIT_AURA" then
 		if arg1 == "player" or (db and db.checkGroup and (arg1:find("party") or arg1:find("raid"))) then
 			ScheduleUpdate()
 		end
+	elseif event == "ACTIVE_TALENT_GROUP_CHANGED" then
+		InitAutoCombatPet()
+		ScheduleUpdate()
 	else
 		ScheduleUpdate()
 	end

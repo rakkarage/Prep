@@ -2,7 +2,6 @@
 -- Combat pet check is automatic for Hunter, Warlock, and Death Knight — no configuration needed.
 
 local ADDON_NAME = "Prep"
-local activeGlows, pendingUpdate = {}, false
 
 local defaults = {
 	checkGroup = true,
@@ -239,6 +238,8 @@ end
 
 -- ── Main update ───────────────────────────────────────────────────────────────
 
+local activeGlows, pendingUpdate, pendingUpdateSlow = {}, false, false
+
 local function ClearGlows()
 	for _, btn in pairs(activeGlows) do SetGlow(btn, false) end
 	wipe(activeGlows)
@@ -275,6 +276,22 @@ local function ScheduleUpdate()
 				activeGlows["__combatPet"] = btn
 			end
 		end
+	end)
+end
+
+local function ScheduleUpdateSlow()
+	if InCombatLockdown() or UnitOnTaxi("player") or (EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive()) then
+		ClearGlows(); return
+	end
+	if pendingUpdateSlow then return end
+	pendingUpdateSlow = true
+	C_Timer.After(0.5, function()
+		pendingUpdateSlow = false
+		if pendingUpdate then return end -- a fast update is already queued, let it handle it
+		if InCombatLockdown() or UnitOnTaxi("player") or (EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive()) then
+			ClearGlows(); return
+		end
+		ScheduleUpdate() -- just kick off the normal fast update from here
 	end)
 end
 
@@ -351,8 +368,10 @@ events:SetScript("OnEvent", function(self, event, arg1)
 		end
 		ScheduleUpdate()
 	elseif event == "UNIT_AURA" then
-		if arg1 == "player" or (db and db.checkGroup and (arg1:find("party") or arg1:find("raid"))) then
+		if arg1 == "player" then
 			ScheduleUpdate()
+		elseif db.checkGroup and (arg1:find("party") or arg1:find("raid")) then
+			ScheduleUpdateSlow()
 		end
 	elseif event == "ACTIVE_TALENT_GROUP_CHANGED" then
 		InitAutoCombatPet()

@@ -245,7 +245,7 @@ local function ClearGlows()
 end
 
 local function ScheduleUpdate()
-	if InCombatLockdown() or (EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive()) then
+	if InCombatLockdown() or UnitOnTaxi("player") or (EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive()) then
 		ClearGlows(); return
 	end
 	if pendingUpdate then return end
@@ -254,8 +254,9 @@ local function ScheduleUpdate()
 		pendingUpdate = false
 		-- FIX: re-check combat inside the callback, since we may have entered
 		-- combat in the 0.1s window between scheduling and execution
-		if InCombatLockdown() then return end
-		if EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive() then return end
+		if InCombatLockdown() or UnitOnTaxi("player") or (EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive()) then
+			ClearGlows(); return
+		end
 		ClearGlows()
 		for _, c in ipairs(checks) do
 			if db[c.key] then
@@ -335,7 +336,7 @@ events:SetScript("OnEvent", function(self, event, arg1)
 		for _, e in ipairs({
 			"EDIT_MODE_LAYOUTS_UPDATED", "ACTIVE_TALENT_GROUP_CHANGED", "PLAYER_ENTERING_WORLD",
 			"PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "UNIT_AURA", "ACTIONBAR_SLOT_CHANGED",
-			"GROUP_ROSTER_UPDATE", "PLAYER_EQUIPMENT_CHANGED", "UNIT_PET",
+			"GROUP_ROSTER_UPDATE", "PLAYER_EQUIPMENT_CHANGED", "UNIT_FLAGS", "UNIT_PET",
 			"PET_JOURNAL_LIST_UPDATE", "ACTIONBAR_PAGE_CHANGED",
 		}) do self:RegisterEvent(e) end
 		self:UnregisterEvent("ADDON_LOADED")
@@ -356,6 +357,14 @@ events:SetScript("OnEvent", function(self, event, arg1)
 	elseif event == "ACTIVE_TALENT_GROUP_CHANGED" then
 		InitAutoCombatPet()
 		ScheduleUpdate()
+	elseif event == "UNIT_FLAGS" then
+		if arg1 == "player" then
+			if UnitOnTaxi("player") then
+				ClearGlows()
+			else
+				ScheduleUpdate()
+			end
+		end
 	else
 		ScheduleUpdate()
 	end

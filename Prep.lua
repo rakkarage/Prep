@@ -140,15 +140,13 @@ local checks = {
 		-- holds an actual weapon (not a shield or offhand frill).
 		key = "slotWeapon",
 		fn = function()
-			-- Use expiry values (2nd and 4th returns) instead of the boolean returns
-			-- (1st and 3rd), which unreliably return 0 instead of true/false.
-			local _, mhExp, _, ohExp = GetWeaponEnchantInfo()
-			if not mhExp or mhExp == 0 then return false end
+			local hasMH, mhExp, mhCharges, mhEnchantID, hasOH, ohExp, ohCharges, ohEnchantID = GetWeaponEnchantInfo()
+			if not hasMH then return false end
 			local ohItem = GetInventoryItemID("player", 17)
 			if ohItem then
 				local _, _, _, _, _, _, _, _, slot = GetItemInfo(ohItem)
 				local ohIsWeapon = slot == "INVTYPE_WEAPONOFFHAND" or slot == "INVTYPE_2HWEAPON"
-				if ohIsWeapon and (not ohExp or ohExp == 0) then return false end
+				if ohIsWeapon and not hasOH then return false end
 			end
 			return true
 		end
@@ -357,6 +355,12 @@ events:SetScript("OnEvent", function(self, event, arg1)
 			"PET_JOURNAL_LIST_UPDATE", "ACTIONBAR_PAGE_CHANGED",
 		}) do self:RegisterEvent(e) end
 		self:UnregisterEvent("ADDON_LOADED")
+		-- Poll weapon enchant state every 2s (no event fires when enchant is applied)
+		C_Timer.NewTicker(2.0, function()
+			if not InCombatLockdown() and not UnitOnTaxi("player") then
+				if db.slotWeapon then ScheduleUpdate() end
+			end
+		end)
 	elseif event == "PLAYER_REGEN_DISABLED" then
 		ClearGlows() -- entering combat: just clear and do nothing
 	elseif event == "PLAYER_REGEN_ENABLED" then

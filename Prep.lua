@@ -1,7 +1,7 @@
 -- Prep: highlights action bar buttons for missing buff, food, weapon enchant, flask, rune, pet, and combat pet.
 -- Combat pet check is automatic for Hunter, Warlock, and Death Knight — no configuration needed.
 
-local ADDON_NAME = "Prep"
+local ADDON_NAME = ...
 
 local defaults = {
 	checkGroup = true,

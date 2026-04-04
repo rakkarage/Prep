@@ -23,10 +23,17 @@ local isMatchActive = false -- Tracks if the "Ghostly Wall" is down / Timer star
 -- ── Restricted mode ───────────────────────────────────────────────────────────
 
 local function IsRestrictedMode()
+	local pvpState = C_PvP.GetActiveMatchState()
+
+	-- We want to RESTRICT (hide glows) only when the match is actually ENGAGED.
+	-- If state is Inactive (0) or Waiting (1), we want to see glows.
+	local isMatchInProgress = (pvpState == Enum.PvPMatchState.Engaged)
+
 	return InCombatLockdown()
 		or UnitOnTaxi("player")
 		or (EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive())
-		or isMatchActive
+		or isMatchActive     -- M+ Wall / Timer
+		or isMatchInProgress -- PvP Gates are open
 end
 
 -- ── Slot → button frame ───────────────────────────────────────────────────────
@@ -370,6 +377,8 @@ events:RegisterEvent("CHALLENGE_MODE_COMPLETED")
 events:RegisterEvent("CHALLENGE_MODE_RESET")
 events:RegisterEvent("PVP_MATCH_ACTIVE")
 events:RegisterEvent("PVP_MATCH_COMPLETE")
+events:RegisterEvent("PVP_MATCH_STATE_CHANGED")
+events:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 
 events:SetScript("OnEvent", function(self, event, arg1)
 	if event == "ADDON_LOADED" then
@@ -402,6 +411,9 @@ events:SetScript("OnEvent", function(self, event, arg1)
 		ClearGlows()
 	elseif event == "CHALLENGE_MODE_COMPLETED" or event == "CHALLENGE_MODE_RESET" or event == "PVP_MATCH_COMPLETE" then
 		isMatchActive = false
+		ScheduleUpdate()
+	elseif event == "PVP_MATCH_STATE_CHANGED" or event == "ZONE_CHANGED_NEW_AREA" then
+		-- Force a re-check of the restricted mode
 		ScheduleUpdate()
 	elseif event == "PLAYER_REGEN_DISABLED" then
 		ClearGlows()

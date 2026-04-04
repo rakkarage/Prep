@@ -18,26 +18,15 @@ local defaults = {
 }
 
 local db = {}
+local isMatchActive = false -- Tracks if the "Ghostly Wall" is down / Timer started
 
 -- ── Restricted mode ───────────────────────────────────────────────────────────
-
-local function HasActiveRestriction()
-	if not C_RestrictedActions or not C_RestrictedActions.IsAddOnRestrictionActive then
-		return false
-	end
-	for typeIndex = 1, 4 do
-		if C_RestrictedActions.IsAddOnRestrictionActive(typeIndex) then
-			return true
-		end
-	end
-	return false
-end
 
 local function IsRestrictedMode()
 	return InCombatLockdown()
 		or UnitOnTaxi("player")
 		or (EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive())
-		or HasActiveRestriction()
+		or isMatchActive
 end
 
 -- ── Slot → button frame ───────────────────────────────────────────────────────
@@ -66,11 +55,45 @@ end
 -- ── Find button on bar ────────────────────────────────────────────────────────
 
 local function FindButtonForType(matchType, matchID)
+	local matchName = (matchType == "spell") and C_Spell.GetSpellName(matchID) or C_Item.GetItemNameByID(matchID)
+	if not matchName then return end
+
 	for s = 1, 180 do
 		local t, id = GetActionInfo(s)
-		if (t == matchType or t == "macro") and id == matchID then
-			local btn = GetButtonForActionSlot(s)
-			if btn then return btn end
+
+		if t then
+			local found = false
+
+			-- 1. Direct Match (Spell/Item dragged to bar)
+			if t == matchType and id == matchID then
+				found = true
+
+				-- 2. Macro Match (The Issue #495 Workaround)
+			elseif t == "macro" then
+				-- Step A: Get the name written on the button (The "Label")
+				local label = GetActionText(s)
+
+				if label then
+					-- Step B: Ask the game for the macro body using the NAME, not the ID
+					local _, _, body = GetMacroInfo(label)
+
+					if body and body:lower():find(matchName:lower(), 1, true) then
+						found = true
+					end
+				end
+
+				-- Step C: Fallback to standard API if Label search failed
+				if not found then
+					local _, link = GetMacroItem(id)
+					local apiID = link and tonumber(link:match("item:(%d+)"))
+					if apiID == matchID then found = true end
+				end
+			end
+
+			if found then
+				local btn = GetButtonForActionSlot(s)
+				if btn then return btn end
+			end
 		end
 	end
 end
@@ -88,7 +111,7 @@ local function FindButton(slot)
 	elseif slot.spellID then
 		return FindButtonForType("spell", slot.spellID)
 	elseif slot.itemID then
-		if (GetItemCount(slot.itemID) or 0) == 0 then return nil end
+		if (C_Item.GetItemCount(slot.itemID) or 0) == 0 then return nil end
 		return FindButtonForType("item", slot.itemID)
 	end
 end
@@ -223,9 +246,11 @@ local function FindCombatPetButton()
 	if not autoCombatPetSpellIDs or #autoCombatPetSpellIDs == 0 then return nil end
 	for s = 1, 180 do
 		local t, id = GetActionInfo(s)
-		if t == "spell" then
+		local spellID = (t == "spell") and id or (t == "macro" and GetMacroSpell(id))
+
+		if spellID then
 			for _, sid in ipairs(autoCombatPetSpellIDs) do
-				if id == sid then
+				if spellID == sid then
 					local btn = GetButtonForActionSlot(s)
 					if btn then return btn end
 				end
@@ -268,7 +293,8 @@ local function ScheduleUpdate()
 	C_Timer.After(0.1, function()
 		pendingUpdate = false
 		if IsRestrictedMode() then
-			ClearGlows(); return
+			ClearGlows()
+			return
 		end
 		ClearGlows()
 		for _, c in ipairs(checks) do
@@ -338,6 +364,13 @@ local needsPetRefresh = false
 
 local events = CreateFrame("Frame")
 events:RegisterEvent("ADDON_LOADED")
+events:RegisterEvent("PLAYER_ENTERING_WORLD")
+events:RegisterEvent("CHALLENGE_MODE_START")
+events:RegisterEvent("CHALLENGE_MODE_COMPLETED")
+events:RegisterEvent("CHALLENGE_MODE_RESET")
+events:RegisterEvent("PVP_MATCH_ACTIVE")
+events:RegisterEvent("PVP_MATCH_COMPLETE")
+
 events:SetScript("OnEvent", function(self, event, arg1)
 	if event == "ADDON_LOADED" then
 		if arg1 ~= ADDON_NAME then return end
@@ -349,7 +382,6 @@ events:SetScript("OnEvent", function(self, event, arg1)
 		for _, e in ipairs({
 			"EDIT_MODE_LAYOUTS_UPDATED",
 			"ACTIVE_TALENT_GROUP_CHANGED",
-			"PLAYER_ENTERING_WORLD",
 			"PLAYER_REGEN_ENABLED",
 			"PLAYER_REGEN_DISABLED",
 			"UNIT_AURA",
@@ -362,6 +394,15 @@ events:SetScript("OnEvent", function(self, event, arg1)
 			"ACTIONBAR_PAGE_CHANGED",
 		}) do self:RegisterEvent(e) end
 		self:UnregisterEvent("ADDON_LOADED")
+	elseif event == "PLAYER_ENTERING_WORLD" then
+		isMatchActive = false
+		ScheduleUpdate()
+	elseif event == "CHALLENGE_MODE_START" or event == "PVP_MATCH_ACTIVE" then
+		isMatchActive = true
+		ClearGlows()
+	elseif event == "CHALLENGE_MODE_COMPLETED" or event == "CHALLENGE_MODE_RESET" or event == "PVP_MATCH_COMPLETE" then
+		isMatchActive = false
+		ScheduleUpdate()
 	elseif event == "PLAYER_REGEN_DISABLED" then
 		ClearGlows()
 	elseif event == "PLAYER_REGEN_ENABLED" then

@@ -196,8 +196,9 @@ local checks = {
 			if not hasMH then return false end
 			local ohItem = GetInventoryItemID("player", 17)
 			if ohItem then
-				local _, _, _, _, _, _, _, _, slot = GetItemInfo(ohItem)
-				local ohIsWeapon = slot == "INVTYPE_WEAPONOFFHAND" or slot == "INVTYPE_2HWEAPON"
+				local info = C_Item.GetItemInfo(ohItem)
+				local ohIsWeapon = info and
+				(info.itemEquipLoc == "INVTYPE_WEAPONOFFHAND" or info.itemEquipLoc == "INVTYPE_2HWEAPON")
 				if ohIsWeapon and not hasOH then return false end
 			end
 			return true
@@ -343,6 +344,21 @@ local function ScheduleUpdateSlow()
 end
 
 -- ── Pet GUID re-resolution ────────────────────────────────────────────────────
+
+local function FindPetGUIDByName(search)
+	search = search:lower()
+	for i = 1, C_PetJournal.GetNumPets() do
+		local guid, _, _, cn, _, _, _, sn = C_PetJournal.GetPetInfoByIndex(i)
+		if guid then
+			local cnl = cn and cn:lower() or ""
+			local snl = sn and sn:lower() or ""
+			if cnl == search or snl == search then
+				local displayName = (cn and cn ~= "") and cn or sn
+				return guid, displayName
+			end
+		end
+	end
+end
 
 local function RefreshPetGUID()
 	if not db.slotPet then return end
@@ -493,21 +509,6 @@ end
 
 local function ParseSpellArg(arg)
 	return tonumber(arg:match("|Hspell:(%d+)")) or tonumber(arg) or FindSpellIDByName(arg)
-end
-
-function FindPetGUIDByName(search)
-	search = search:lower()
-	for i = 1, C_PetJournal.GetNumPets() do
-		local guid, _, _, cn, _, _, _, sn = C_PetJournal.GetPetInfoByIndex(i)
-		if guid then
-			local cnl = cn and cn:lower() or ""
-			local snl = sn and sn:lower() or ""
-			if cnl == search or snl == search then
-				local displayName = (cn and cn ~= "") and cn or sn
-				return guid, displayName
-			end
-		end
-	end
 end
 
 -- ── Icon helpers ──────────────────────────────────────────────────────────────

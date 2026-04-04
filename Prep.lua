@@ -19,6 +19,27 @@ local defaults = {
 
 local db = {}
 
+-- ── Restricted mode ───────────────────────────────────────────────────────────
+
+local function HasActiveRestriction()
+	if not C_RestrictedActions or not C_RestrictedActions.IsAddOnRestrictionActive then
+		return false
+	end
+	for typeIndex = 1, 4 do
+		if C_RestrictedActions.IsAddOnRestrictionActive(typeIndex) then
+			return true
+		end
+	end
+	return false
+end
+
+local function IsRestrictedMode()
+	return InCombatLockdown()
+		or UnitOnTaxi("player")
+		or (EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive())
+		or HasActiveRestriction()
+end
+
 -- ── Slot → button frame ───────────────────────────────────────────────────────
 
 local BAR_RANGES = {
@@ -136,8 +157,6 @@ local checks = {
 		end
 	},
 	{
-		-- FIX: check both hands, but only require offhand enchant if the offhand slot
-		-- holds an actual weapon (not a shield or offhand frill).
 		key = "slotWeapon",
 		fn = function()
 			local hasMH, mhExp, mhCharges, mhEnchantID, hasOH, ohExp, ohCharges, ohEnchantID = GetWeaponEnchantInfo()
@@ -165,7 +184,6 @@ local checks = {
 
 -- ── Auto combat pet (Hunter / Warlock / Death Knight) ─────────────────────────
 
--- Ordered by preference: the first spell found on bars wins.
 local COMBAT_PET_SPELLS = {
 	HUNTER      = { "Call Pet 1", "Call Pet 2", "Call Pet 3", "Call Pet 4", "Call Pet 5" },
 	WARLOCK     = { "Summon Imp", "Summon Voidwalker", "Summon Succubus", "Summon Felhunter",
@@ -174,7 +192,7 @@ local COMBAT_PET_SPELLS = {
 	DEATHKNIGHT = { "Raise Dead" },
 }
 
-local autoCombatPetSpellIDs = nil -- nil = not a pet class; {} = pet class, populated on first update
+local autoCombatPetSpellIDs = nil
 
 local function InitAutoCombatPet()
 	local class = UnitClassBase("player")
@@ -187,7 +205,6 @@ local function InitAutoCombatPet()
 	for _, name in ipairs(spellNames) do
 		local id = C_Spell.GetSpellIDForSpellIdentifier and C_Spell.GetSpellIDForSpellIdentifier(name)
 		if not id then
-			-- fall back to spellbook scan
 			for i = 1, 1000 do
 				local info = C_SpellBook.GetSpellBookItemInfo(i, Enum.SpellBookSpellBank.Player)
 				if not info then break end
@@ -202,7 +219,6 @@ local function InitAutoCombatPet()
 	end
 end
 
--- Returns the first visible bar button matching any known summon spell, or nil.
 local function FindCombatPetButton()
 	if not autoCombatPetSpellIDs or #autoCombatPetSpellIDs == 0 then return nil end
 	for s = 1, 180 do
@@ -244,16 +260,14 @@ local function ClearGlows()
 end
 
 local function ScheduleUpdate()
-	if InCombatLockdown() or UnitOnTaxi("player") or (EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive()) then
+	if IsRestrictedMode() then
 		ClearGlows(); return
 	end
 	if pendingUpdate then return end
 	pendingUpdate = true
 	C_Timer.After(0.1, function()
 		pendingUpdate = false
-		-- FIX: re-check combat inside the callback, since we may have entered
-		-- combat in the 0.1s window between scheduling and execution
-		if InCombatLockdown() or UnitOnTaxi("player") or (EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive()) then
+		if IsRestrictedMode() then
 			ClearGlows(); return
 		end
 		ClearGlows()
@@ -266,7 +280,6 @@ local function ScheduleUpdate()
 				end
 			end
 		end
-		-- Auto combat pet: highlight summon button if pet is missing
 		if autoCombatPetSpellIDs and not UnitExists("pet") then
 			local btn = FindCombatPetButton()
 			if btn then
@@ -278,32 +291,27 @@ local function ScheduleUpdate()
 end
 
 local function ScheduleUpdateSlow()
-	if InCombatLockdown() or UnitOnTaxi("player") or (EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive()) then
+	if IsRestrictedMode() then
 		ClearGlows(); return
 	end
 	if pendingUpdateSlow then return end
 	pendingUpdateSlow = true
 	C_Timer.After(0.5, function()
 		pendingUpdateSlow = false
-		if pendingUpdate then return end -- a fast update is already queued, let it handle it
-		if InCombatLockdown() or UnitOnTaxi("player") or (EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive()) then
+		if pendingUpdate then return end
+		if IsRestrictedMode() then
 			ClearGlows(); return
 		end
-		ScheduleUpdate() -- just kick off the normal fast update from here
+		ScheduleUpdate()
 	end)
 end
 
 -- ── Pet GUID re-resolution ────────────────────────────────────────────────────
 
--- FIX: GUIDs can go stale between sessions. On load, re-resolve the stored pet
--- by name (using petName as the source of truth) so we always have a fresh GUID.
--- This is deferred to PET_JOURNAL_LIST_UPDATE because the journal may not be
--- populated yet at ADDON_LOADED time.
 local function RefreshPetGUID()
 	if not db.slotPet then return end
 	local lookupName = db.slotPet.petName
 	if not lookupName then
-		-- legacy entry with no stored name: try to recover the name from the GUID
 		if db.slotPet.petGUID then
 			local _, cn, _, _, _, _, _, sn = C_PetJournal.GetPetInfoByPetID(db.slotPet.petGUID)
 			lookupName = (cn and cn ~= "") and cn or sn
@@ -315,8 +323,6 @@ local function RefreshPetGUID()
 		end
 	end
 
-	-- FindPetGUIDByName is defined later but called after ADDON_LOADED fires,
-	-- so forward reference is fine here.
 	local freshGUID = FindPetGUIDByName(lookupName)
 	if freshGUID then
 		db.slotPet.petGUID = freshGUID
@@ -328,10 +334,6 @@ end
 
 -- ── Events ────────────────────────────────────────────────────────────────────
 
--- FIX: flag set at ADDON_LOADED, consumed on the first PET_JOURNAL_LIST_UPDATE.
--- This ensures RefreshPetGUID runs only after the journal is fully populated,
--- avoiding false "pet not found" clears that happened when the journal wasn't
--- ready yet at ADDON_LOADED time.
 local needsPetRefresh = false
 
 local events = CreateFrame("Frame")
@@ -340,31 +342,32 @@ events:SetScript("OnEvent", function(self, event, arg1)
 	if event == "ADDON_LOADED" then
 		if arg1 ~= ADDON_NAME then return end
 		PrepDB = PrepDB or {}
-		-- FIX: set db once and never reassign it, so all closures always see the
-		-- live table. Reset uses wipe() + repopulation instead of reassignment.
 		db = PrepDB
 		for k, v in pairs(defaults) do if db[k] == nil then db[k] = v end end
-		-- FIX: defer pet GUID refresh until PET_JOURNAL_LIST_UPDATE fires,
-		-- because the journal is not reliably populated at ADDON_LOADED time.
 		needsPetRefresh = true
 		InitAutoCombatPet()
 		for _, e in ipairs({
-			"EDIT_MODE_LAYOUTS_UPDATED", "ACTIVE_TALENT_GROUP_CHANGED", "PLAYER_ENTERING_WORLD",
-			"PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "UNIT_AURA", "ACTIONBAR_SLOT_CHANGED",
-			"GROUP_ROSTER_UPDATE", "PLAYER_EQUIPMENT_CHANGED", "UNIT_FLAGS", "UNIT_PET",
-			"PET_JOURNAL_LIST_UPDATE", "ACTIONBAR_PAGE_CHANGED",
+			"EDIT_MODE_LAYOUTS_UPDATED",
+			"ACTIVE_TALENT_GROUP_CHANGED",
+			"PLAYER_ENTERING_WORLD",
+			"PLAYER_REGEN_ENABLED",
+			"PLAYER_REGEN_DISABLED",
+			"UNIT_AURA",
+			"ACTIONBAR_SLOT_CHANGED",
+			"GROUP_ROSTER_UPDATE",
+			"PLAYER_EQUIPMENT_CHANGED",
+			"UNIT_FLAGS",
+			"UNIT_PET",
+			"PET_JOURNAL_LIST_UPDATE",
+			"ACTIONBAR_PAGE_CHANGED",
 		}) do self:RegisterEvent(e) end
 		self:UnregisterEvent("ADDON_LOADED")
-		-- Poll weapon enchant state every 2s (no event fires when enchant is applied)
-		C_Timer.NewTicker(2.0, function()
-			if not InCombatLockdown() and not UnitOnTaxi("player") then
-				if db.slotWeapon then ScheduleUpdate() end
-			end
-		end)
 	elseif event == "PLAYER_REGEN_DISABLED" then
-		ClearGlows() -- entering combat: just clear and do nothing
+		ClearGlows()
 	elseif event == "PLAYER_REGEN_ENABLED" then
-		C_Timer.After(1.0, function() if not InCombatLockdown() then ScheduleUpdate() end end)
+		C_Timer.After(1.0, function()
+			if not IsRestrictedMode() then ScheduleUpdate() end
+		end)
 	elseif event == "PET_JOURNAL_LIST_UPDATE" then
 		if needsPetRefresh then
 			needsPetRefresh = false
@@ -388,6 +391,8 @@ events:SetScript("OnEvent", function(self, event, arg1)
 				ScheduleUpdate()
 			end
 		end
+	elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then
+		ScheduleUpdate()
 	else
 		ScheduleUpdate()
 	end
@@ -434,7 +439,7 @@ local function ParseSpellArg(arg)
 	return tonumber(arg:match("|Hspell:(%d+)")) or tonumber(arg) or FindSpellIDByName(arg)
 end
 
-function FindPetGUIDByName(search) -- note: global so RefreshPetGUID can call it before definition order matters
+function FindPetGUIDByName(search)
 	search = search:lower()
 	for i = 1, C_PetJournal.GetNumPets() do
 		local guid, _, _, cn, _, _, _, sn = C_PetJournal.GetPetInfoByIndex(i)
@@ -516,12 +521,10 @@ local function PrintHelp()
 		"/prep group  - toggle group buff check",
 		"/prep alpha <0.1-1.0>",
 		"/prep color <r> <g> <b>  (0.0-1.0)",
-		"/prep status  (combat pet check is automatic for Hunter/Warlock/DK)",
+		"/prep status",
 	}) do print("  |cffffff00" .. l .. "|r") end
 end
 
--- Prefix-match input against all valid commands.
--- Returns: matched string (success), false (ambiguous, already printed), nil (no match → show help)
 local ALL_CMDS = {
 	"buff", "food", "weapon", "flask", "rune", "pet",
 	"clear", "reset", "group", "alpha", "color", "status",
@@ -586,8 +589,6 @@ SlashCmdList["PREP"] = function(msg)
 		if origArg == "" then
 			print("|cff00ccff[Prep]|r Usage: /prep pet <name>"); return
 		end
-		-- FIX: store petName alongside petGUID so re-resolution on next login works
-		-- even if the GUID itself goes stale.
 		local guid, name = FindPetGUIDByName(origArg)
 		if not guid then
 			print("|cff00ccff[Prep]|r Pet not found: |cffffff00" .. origArg .. "|r"); return
@@ -605,8 +606,6 @@ SlashCmdList["PREP"] = function(msg)
 			print("|cff00ccff[Prep]|r Unknown slot: " .. arg .. "  (buff/food/weapon/flask/rune/pet)")
 		end
 	elseif cmd == "reset" then
-		-- FIX: wipe and repopulate in-place rather than reassigning db, so all
-		-- closures that captured db upvalue continue pointing at the live table.
 		ClearGlows()
 		wipe(PrepDB)
 		for k, v in pairs(defaults) do PrepDB[k] = v end

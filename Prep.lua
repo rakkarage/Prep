@@ -4,8 +4,8 @@
 local ADDON_NAME = ...
 
 local defaults = {
-	checkGroup = true,
-	checkRestrictions = true,
+	group = true,
+	combat = true,
 	flashAlpha = 1.0,
 	flashR = 1.0,
 	flashG = 0.3,
@@ -19,21 +19,24 @@ local defaults = {
 }
 
 local db = {}
-local isMatchActive = false -- Tracks if the "Ghostly Wall" is down / Timer started
+local isMatchActive = false
 
 -- ── Restricted mode ───────────────────────────────────────────────────────────
 
 local function IsRestrictedMode()
-	if not db.checkRestrictions then return false end
-
 	local pvpState = C_PvP.GetActiveMatchState()
 	local isMatchInProgress = (pvpState == Enum.PvPMatchState.Engaged)
 
-	return InCombatLockdown()
-		or UnitOnTaxi("player")
-		or (EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive())
-		or isMatchActive
-		or isMatchInProgress
+	if isMatchActive or isMatchInProgress or UnitOnTaxi("player") or
+		(EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive()) then
+		return true
+	end
+
+	if InCombatLockdown() and not db.combat then
+		return true
+	end
+
+	return false
 end
 
 -- ── Slot → button frame ───────────────────────────────────────────────────────
@@ -125,9 +128,9 @@ end
 
 -- ── Buff / aura checks ────────────────────────────────────────────────────────
 
-local function HasAura(name, checkGroup)
+local function HasAura(name, group)
 	if not AuraUtil.FindAuraByName(name, "player", "HELPFUL") then return false end
-	if checkGroup then
+	if group then
 		local n = GetNumGroupMembers()
 		if n > 0 then
 			local pfx = IsInRaid() and "raid" or "party"
@@ -176,7 +179,7 @@ local checks = {
 		fn = function()
 			if not db.slotBuff or not db.slotBuff.spellID then return true end
 			local name = C_Spell.GetSpellName(db.slotBuff.spellID)
-			return not name or HasAura(name, db.checkGroup)
+			return not name or HasAura(name, db.group)
 		end
 	},
 	{
@@ -430,7 +433,7 @@ events:SetScript("OnEvent", function(self, event, arg1)
 	elseif event == "UNIT_AURA" then
 		if arg1 == "player" then
 			ScheduleUpdate()
-		elseif db.checkGroup and (arg1:find("party") or arg1:find("raid")) then
+		elseif db.group and (arg1:find("party") or arg1:find("raid")) then
 			ScheduleUpdateSlow()
 		end
 	elseif event == "ACTIVE_TALENT_GROUP_CHANGED" then
@@ -554,8 +557,8 @@ local function ShowStatus()
 	if autoCombatPetSpellIDs then
 		print("  Combat pet: |cff00ff00auto (enabled)|r")
 	end
-	print("  Check Group: " .. tostring(db.checkGroup))
-	print("  Check Restrictions: " .. tostring(db.checkRestrictions))
+	print("  Check Group Buff: " .. tostring(db.group))
+	print("  Enabled In Combat: " .. tostring(db.combat))
 	print(("  Highlight: alpha=%.2f  color=%.2f/%.2f/%.2f"):format(db.flashAlpha, db.flashR, db.flashG, db.flashB))
 end
 
@@ -573,7 +576,7 @@ local function PrintHelp()
 		"/prep clear <buff/food/weapon/flask/rune/pet>  (combat pet is automatic)",
 		"/prep reset",
 		"/prep group - toggle check group buff",
-		"/prep restrict - toggle check restrictions (combat, m+, pvp)",
+		"/prep combat - toggle enabled in combat (not m+ or pvp)",
 		"/prep alpha <0.1-1.0>",
 		"/prep color <r> <g> <b>  (0.0-1.0)",
 		"/prep status",
@@ -581,7 +584,7 @@ local function PrintHelp()
 end
 
 local ALL_CMDS = {
-	"buff", "food", "weapon", "flask", "rune", "pet", "clear", "reset", "group", "restrict", "alpha", "color", "status",
+	"buff", "food", "weapon", "flask", "rune", "pet", "clear", "reset", "group", "combat", "alpha", "color", "status",
 }
 
 local function ResolveCmd(input)
@@ -668,8 +671,8 @@ SlashCmdList["PREP"] = function(msg)
 		end)
 		print("|cff00ccff[Prep]|r All settings reset to defaults")
 	elseif cmd == "group" then
-		db.checkGroup = not db.checkGroup
-		print("|cff00ccff[Prep]|r Group buff check: " .. (db.checkGroup and "|cff00ff00ON|r" or "|cffff4444OFF|r"))
+		db.group = not db.group
+		print("|cff00ccff[Prep]|r Group buff check: " .. (db.group and "|cff00ff00ON|r" or "|cffff4444OFF|r"))
 		ScheduleUpdate()
 	elseif cmd == "alpha" then
 		local v = tonumber(origArg)
@@ -690,10 +693,10 @@ SlashCmdList["PREP"] = function(msg)
 		ScheduleUpdate()
 	elseif cmd == "status" then
 		ShowStatus()
-	elseif cmd == "restrict" then
-		db.checkRestrictions = not db.checkRestrictions
-		local state = db.checkRestrictions and "|cff00ff00ENABLED (Normal)|r" or "|cffff4444DISABLED (Always Glow)|r"
-		print("|cff00ccff[Prep]|r Restriction checking is now: " .. state)
+	elseif cmd == "combat" then
+		db.combat = not db.combat
+		local state = db.combat and "|cff00ff00Enabled|r" or "|cffff4444Disabled|r"
+		print("|cff00ccff[Prep]|r Combat: " .. state)
 		ScheduleUpdate()
 	else
 		PrintHelp()

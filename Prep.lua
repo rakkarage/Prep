@@ -5,6 +5,7 @@ local ADDON_NAME = ...
 
 local defaults = {
 	checkGroup = true,
+	checkRestrictions = true,
 	flashAlpha = 1.0,
 	flashR = 1.0,
 	flashG = 0.3,
@@ -23,17 +24,16 @@ local isMatchActive = false -- Tracks if the "Ghostly Wall" is down / Timer star
 -- ── Restricted mode ───────────────────────────────────────────────────────────
 
 local function IsRestrictedMode()
-	local pvpState = C_PvP.GetActiveMatchState()
+	if not db.checkRestrictions then return false end
 
-	-- We want to RESTRICT (hide glows) only when the match is actually ENGAGED.
-	-- If state is Inactive (0) or Waiting (1), we want to see glows.
+	local pvpState = C_PvP.GetActiveMatchState()
 	local isMatchInProgress = (pvpState == Enum.PvPMatchState.Engaged)
 
 	return InCombatLockdown()
 		or UnitOnTaxi("player")
 		or (EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive())
-		or isMatchActive     -- M+ Wall / Timer
-		or isMatchInProgress -- PvP Gates are open
+		or isMatchActive
+		or isMatchInProgress
 end
 
 -- ── Slot → button frame ───────────────────────────────────────────────────────
@@ -554,7 +554,8 @@ local function ShowStatus()
 	if autoCombatPetSpellIDs then
 		print("  Combat pet: |cff00ff00auto (enabled)|r")
 	end
-	print("  Group check: " .. tostring(db.checkGroup))
+	print("  Check Group: " .. tostring(db.checkGroup))
+	print("  Check Restrictions: " .. tostring(db.checkRestrictions))
 	print(("  Highlight: alpha=%.2f  color=%.2f/%.2f/%.2f"):format(db.flashAlpha, db.flashR, db.flashG, db.flashB))
 end
 
@@ -571,7 +572,8 @@ local function PrintHelp()
 		"/prep pet <name>",
 		"/prep clear <buff/food/weapon/flask/rune/pet>  (combat pet is automatic)",
 		"/prep reset",
-		"/prep group  - toggle group buff check",
+		"/prep group - toggle check group buff",
+		"/prep restrict - toggle check restrictions (combat, m+, pvp)",
 		"/prep alpha <0.1-1.0>",
 		"/prep color <r> <g> <b>  (0.0-1.0)",
 		"/prep status",
@@ -579,8 +581,7 @@ local function PrintHelp()
 end
 
 local ALL_CMDS = {
-	"buff", "food", "weapon", "flask", "rune", "pet",
-	"clear", "reset", "group", "alpha", "color", "status",
+	"buff", "food", "weapon", "flask", "rune", "pet", "clear", "reset", "group", "restrict", "alpha", "color", "status",
 }
 
 local function ResolveCmd(input)
@@ -689,6 +690,11 @@ SlashCmdList["PREP"] = function(msg)
 		ScheduleUpdate()
 	elseif cmd == "status" then
 		ShowStatus()
+	elseif cmd == "restrict" then
+		db.checkRestrictions = not db.checkRestrictions
+		local state = db.checkRestrictions and "|cff00ff00ENABLED (Normal)|r" or "|cffff4444DISABLED (Always Glow)|r"
+		print("|cff00ccff[Prep]|r Restriction checking is now: " .. state)
+		ScheduleUpdate()
 	else
 		PrintHelp()
 	end

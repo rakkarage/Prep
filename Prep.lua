@@ -133,7 +133,10 @@ end
 -- ── Buff / aura checks ────────────────────────────────────────────────────────
 
 function Prep:HasAura(name, group)
+	-- Check if player has the aura. Always required.
 	if not AuraUtil.FindAuraByName(name, "player", "HELPFUL") then return false end
+	-- If group mode is enabled, also check that ALL group members have the aura.
+	-- Return false if any member is missing it (harder requirement).
 	if group then
 		local n = GetNumGroupMembers()
 		if n > 0 then
@@ -177,13 +180,18 @@ function Prep:HasRune()
 	return false
 end
 
+-- Each check function returns TRUE if the condition is MET (good), FALSE if MISSING (bad → glow).
+-- Only checks that are configured in the DB (e.g., self.db.slotFlask is set) will be evaluated.
 local checks = {
 	{
 		key = "slotBuff",
 		fn = function()
+			-- Check if player has the configured buff active.
+			-- Return true if buff exists OR if no buff is configured.
 			if not Prep.db.slotBuff or not Prep.db.slotBuff.spellID then return true end
 			local name = C_Spell.GetSpellName(Prep.db.slotBuff.spellID)
-			return not name or Prep:HasAura(name, Prep.db.group)
+			if not name then return true end  -- Spell doesn't exist, don't glow
+			return Prep:HasAura(name, Prep.db.group)
 		end
 	},
 	{
@@ -298,6 +306,8 @@ function Prep:ClearGlows()
 end
 
 function Prep:ScheduleUpdate()
+	-- Fast update (0.1s cadence) triggered by combat/aura/bar changes.
+	-- Only checks slots that are configured in the DB to avoid wasting CPU iterating all 180 bars.
 	if self:IsRestrictedMode() then
 		self:ClearGlows(); return
 	end
@@ -310,6 +320,7 @@ function Prep:ScheduleUpdate()
 			return
 		end
 		self:ClearGlows()
+		-- Iterate checks and glow buttons whose conditions are FALSE (missing).
 		for _, c in ipairs(checks) do
 			if self.db[c.key] then
 				local btn = self:FindButton(self.db[c.key])
@@ -319,6 +330,7 @@ function Prep:ScheduleUpdate()
 				end
 			end
 		end
+		-- Auto-summon pet: if class has combat pet summons and no pet is out, glow the summon button.
 		if self.autoCombatPetSpellIDs and not UnitExists("pet") then
 			local btn = self:FindCombatPetButton()
 			if btn then
@@ -329,8 +341,8 @@ function Prep:ScheduleUpdate()
 	end)
 end
 
-function Prep:ScheduleUpdateSlow()
-	if self:IsRestrictedMode() then
+function Prep:ScheduleUpdateSlow()	-- Slower update (0.5s cadence) for less urgent checks like group member aura changes.
+	-- Defers to the fast update if one is already pending to avoid doubling up work.	if self:IsRestrictedMode() then
 		self:ClearGlows(); return
 	end
 	if self.pendingUpdateSlow then return end
@@ -363,9 +375,13 @@ function Prep:FindPetGUIDByName(search)
 end
 
 function Prep:RefreshPetGUID()
+	-- Pet GUIDs become stale when you re-log, switch specs, or change pet.
+	-- This function re-resolves the pet by NAME against the current journal to get a fresh GUID.
+	-- Useful after talent swaps or when the stored GUID no longer exists.
 	if not self.db.slotPet then return end
 	local lookupName = self.db.slotPet.petName
 	if not lookupName then
+		-- If no name stored, try to extract it from the old GUID (if it still exists in journal).
 		if self.db.slotPet.petGUID then
 			local _, cn, _, _, _, _, _, sn = C_PetJournal.GetPetInfoByPetID(self.db.slotPet.petGUID)
 			lookupName = (cn and cn ~= "") and cn or sn
@@ -377,10 +393,12 @@ function Prep:RefreshPetGUID()
 		end
 	end
 
+	-- Fuzzy-match the name in the current journal to find the fresh GUID.
 	local freshGUID = self:FindPetGUIDByName(lookupName)
 	if freshGUID then
 		self.db.slotPet.petGUID = freshGUID
 	else
+		-- Pet no longer exists in journal (deleted, not learned on this character, etc).
 		self.db.slotPet = nil
 		print("|cff00ccff[Prep]|r Pet '" .. lookupName .. "' no longer found in journal, cleared.")
 	end
@@ -469,6 +487,8 @@ Prep.events:SetScript("OnEvent", function(self, event, arg1)
 end)
 
 local function FindSpellIDByName(search)
+	-- Search the player's spellbook for a spell by name.
+	-- Returns the spell ID if found, or nil if not found (spell not learned or typo).
 	search = search:lower()
 	for i = 1, 1000 do
 		local info = C_SpellBook.GetSpellBookItemInfo(i, Enum.SpellBookSpellBank.Player)
@@ -478,13 +498,18 @@ local function FindSpellIDByName(search)
 			if name and name:lower() == search then return info.spellID end
 		end
 	end
+	-- Fallback: try the newer spell identifier API.
 	if C_Spell.GetSpellIDForSpellIdentifier then
 		local id = C_Spell.GetSpellIDForSpellIdentifier(search)
 		if id and id > 0 then return id end
 	end
+	-- Not found.
+	return nil
 end
 
 local function FindItemIDByName(search)
+	-- Search the player's inventory for an item by name.
+	-- Returns the item ID if found, or nil if not in bags (not looted or wrong name).
 	search = search:lower()
 	for bag = 0, NUM_BAG_SLOTS do
 		for slot = 1, C_Container.GetContainerNumSlots(bag) do
@@ -495,6 +520,8 @@ local function FindItemIDByName(search)
 			end
 		end
 	end
+	-- Not found.
+	return nil
 end
 
 local function ParseItemArg(arg)

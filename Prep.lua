@@ -190,7 +190,7 @@ local checks = {
 			-- Return true if buff exists OR if no buff is configured.
 			if not Prep.db.slotBuff or not Prep.db.slotBuff.spellID then return true end
 			local name = C_Spell.GetSpellName(Prep.db.slotBuff.spellID)
-			if not name then return true end  -- Spell doesn't exist, don't glow
+			if not name then return true end -- Spell doesn't exist, don't glow
 			return Prep:HasAura(name, Prep.db.group)
 		end
 	},
@@ -341,8 +341,9 @@ function Prep:ScheduleUpdate()
 	end)
 end
 
-function Prep:ScheduleUpdateSlow()	-- Slower update (0.5s cadence) for less urgent checks like group member aura changes.
-	-- Defers to the fast update if one is already pending to avoid doubling up work.	if self:IsRestrictedMode() then
+function Prep:ScheduleUpdateSlow() -- Slower update (0.5s cadence) for less urgent checks like group member aura changes.
+	-- Defers to the fast update if one is already pending to avoid doubling up work.
+	if self:IsRestrictedMode() then
 		self:ClearGlows(); return
 	end
 	if self.pendingUpdateSlow then return end

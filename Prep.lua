@@ -5,7 +5,7 @@ local addonName, ns = ...
 ns.Prep = {
 	defaults = {
 		group = true,
-		combat = true,
+		combat = false,
 		flashAlpha = 1.0,
 		flashR = 1.0,
 		flashG = 0.3,
@@ -509,7 +509,11 @@ Prep.events:SetScript("OnEvent", function(self, event, arg1)
 		-- Force a re-check of the restricted mode
 		Prep:ScheduleUpdate()
 	elseif event == "PLAYER_REGEN_DISABLED" then
-		Prep:ClearGlows()
+		if not Prep.db.combat then
+			Prep:ClearGlows()
+		else
+			Prep:ScheduleUpdate()
+		end
 	elseif event == "PLAYER_REGEN_ENABLED" then
 		C_Timer.After(1.0, function()
 			if not Prep:IsRestrictedMode() then Prep:ScheduleUpdate() end

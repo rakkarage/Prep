@@ -132,21 +132,32 @@ end
 
 -- ── Buff / aura checks ────────────────────────────────────────────────────────
 
+function Prep:ShouldCheckGroupUnit(unit)
+	return UnitExists(unit) and not UnitIsDeadOrGhost(unit)
+end
+
+function Prep:AllGroupMembersHaveAura(hasAura)
+	local n = GetNumGroupMembers()
+	if n == 0 then return true end
+
+	local pfx = IsInRaid() and "raid" or "party"
+	for i = 1, n do
+		local unit = pfx .. i
+		if self:ShouldCheckGroupUnit(unit) and not hasAura(unit) then
+			return false
+		end
+	end
+
+	return true
+end
+
 function Prep:HasAura(name, group)
 	-- Check if player has the aura. Always required.
 	if not AuraUtil.FindAuraByName(name, "player", "HELPFUL") then return false end
-	-- If group mode is enabled, also check that ALL group members have the aura.
-	-- Return false if any member is missing it (harder requirement).
 	if group then
-		local n = GetNumGroupMembers()
-		if n > 0 then
-			local pfx = IsInRaid() and "raid" or "party"
-			for i = 1, n do
-				if UnitExists(pfx .. i) and not AuraUtil.FindAuraByName(name, pfx .. i, "HELPFUL") then
-					return false
-				end
-			end
-		end
+		return self:AllGroupMembersHaveAura(function(unit)
+			return AuraUtil.FindAuraByName(name, unit, "HELPFUL") ~= nil
+		end)
 	end
 	return true
 end
@@ -479,6 +490,8 @@ Prep.events:SetScript("OnEvent", function(self, event, arg1)
 			else
 				Prep:ScheduleUpdate()
 			end
+		elseif Prep.db.group and (arg1:find("party") or arg1:find("raid")) then
+			Prep:ScheduleUpdateSlow()
 		end
 	elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then
 		Prep:ScheduleUpdate()

@@ -1,4 +1,4 @@
--- Prep: Highlights missing buffs and consumables on action bars
+-- ✨️ Prep: Highlights missing configured actions on action bars.
 
 local addonName, ns = ...
 

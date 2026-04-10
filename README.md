@@ -1,9 +1,8 @@
-# Prep
+# ✨️ Prep
 
 ![screenshot](screenshot.png)
 
-World of Warcraft addon.
-Highlights action bar buttons for missing buff, food, weapon enchant, flask and rune.
+Highlights missing configured actions on action bars.
 
 - Blizzard kinda does this for some buffs already. (blue outline on battle shout if anyone missing it (maybe need single button assistant on))
 - Only works outside combat currently.
@@ -19,6 +18,7 @@ Highlights action bar buttons for missing buff, food, weapon enchant, flask and 
   - `/prep rune <item id/link/name>`: set rune to track
   - `/prep clear <buff/food/weapon/flask/rune>`: clear type
   - `/prep group`: toggle group buff check
+  - `/prep combat`: toggle enabled in combat (forced off in m+ and pvp) (testing!? buffs are secret in raid during combat?) (default false)
   - `/prep alpha <a>`: set highlight alpha (0.0 - 1.0)
   - `/prep color <r g b>`: set highlight color (0.0 - 1.0)
   - `/prep status`: show current status

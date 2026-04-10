@@ -1,5 +1,5 @@
 ## Title: Prep
-## Notes: Highlights action bar buttons for missing buff, food, weapon enchant, flask and rune.
+## Notes: Highlights missing configured actions on action bars.
 ## Category: User Interface
 ## Author: rakkarage
 ## SavedVariablesPerCharacter: PrepDB

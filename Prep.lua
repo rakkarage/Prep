@@ -24,6 +24,8 @@ ns.Prep = {
 	pendingUpdateSlow = false,
 	autoCombatPetSpellIDs = nil,
 	needsPetRefresh = false,
+	petRefreshAttempts = 0,
+	petRefreshMaxAttempts = 12,
 }
 local Prep = ns.Prep
 
@@ -390,7 +392,7 @@ function Prep:RefreshPetGUID()
 	-- Pet GUIDs become stale when you re-log, switch specs, or change pet.
 	-- This function re-resolves the pet by NAME against the current journal to get a fresh GUID.
 	-- Useful after talent swaps or when the stored GUID no longer exists.
-	if not self.db.slotPet then return end
+	if not self.db.slotPet then return true end
 	local lookupName = self.db.slotPet.petName
 	if not lookupName then
 		-- If no name stored, try to extract it from the old GUID (if it still exists in journal).
@@ -399,9 +401,8 @@ function Prep:RefreshPetGUID()
 			lookupName = (cn and cn ~= "") and cn or sn
 		end
 		if not lookupName then
-			self.db.slotPet = nil
-			print("|cff00ccff[Prep]|r Stored pet could not be identified, cleared.")
-			return
+			-- Journal data may not be fully available yet; let retry logic handle this.
+			return false
 		end
 	end
 
@@ -409,11 +410,41 @@ function Prep:RefreshPetGUID()
 	local freshGUID = self:FindPetGUIDByName(lookupName)
 	if freshGUID then
 		self.db.slotPet.petGUID = freshGUID
-	else
-		-- Pet no longer exists in journal (deleted, not learned on this character, etc).
-		self.db.slotPet = nil
-		print("|cff00ccff[Prep]|r Pet '" .. lookupName .. "' no longer found in journal, cleared.")
+		return true
 	end
+	return false
+end
+
+function Prep:AttemptPetRefresh()
+	if not self.needsPetRefresh then return end
+	if not self.db.slotPet then
+		self.needsPetRefresh = false
+		self.petRefreshAttempts = 0
+		return
+	end
+
+	self.petRefreshAttempts = (self.petRefreshAttempts or 0) + 1
+	if self:RefreshPetGUID() then
+		self.needsPetRefresh = false
+		self.petRefreshAttempts = 0
+		return
+	end
+
+	if self.petRefreshAttempts >= (self.petRefreshMaxAttempts or 12) then
+		local failedName = self.db.slotPet.petName or "(unknown)"
+		self.db.slotPet = nil
+		self.needsPetRefresh = false
+		self.petRefreshAttempts = 0
+		print("|cff00ccff[Prep]|r Pet '" .. failedName .. "' no longer found after journal sync, cleared.")
+		return
+	end
+
+	-- Retry with a short delay while the pet journal continues to populate after login.
+	C_Timer.After(0.5, function()
+		if Prep.needsPetRefresh then
+			Prep:AttemptPetRefresh()
+		end
+	end)
 end
 
 Prep.events = CreateFrame("Frame")
@@ -434,6 +465,7 @@ Prep.events:SetScript("OnEvent", function(self, event, arg1)
 		Prep.db = PrepDB
 		for k, v in pairs(Prep.defaults) do if Prep.db[k] == nil then Prep.db[k] = v end end
 		Prep.needsPetRefresh = true
+		Prep.petRefreshAttempts = 0
 		Prep:InitAutoCombatPet()
 		for _, e in ipairs({
 			"EDIT_MODE_LAYOUTS_UPDATED",
@@ -452,6 +484,13 @@ Prep.events:SetScript("OnEvent", function(self, event, arg1)
 		self:UnregisterEvent("ADDON_LOADED")
 	elseif event == "PLAYER_ENTERING_WORLD" then
 		Prep.isMatchActive = false
+		if Prep.needsPetRefresh then
+			C_Timer.After(1.0, function()
+				if Prep.needsPetRefresh then
+					Prep:AttemptPetRefresh()
+				end
+			end)
+		end
 		Prep:ScheduleUpdate()
 	elseif event == "CHALLENGE_MODE_START" or event == "PVP_MATCH_ACTIVE" then
 		Prep.isMatchActive = true
@@ -470,8 +509,7 @@ Prep.events:SetScript("OnEvent", function(self, event, arg1)
 		end)
 	elseif event == "PET_JOURNAL_LIST_UPDATE" then
 		if Prep.needsPetRefresh then
-			Prep.needsPetRefresh = false
-			Prep:RefreshPetGUID()
+			Prep:AttemptPetRefresh()
 		end
 		Prep:ScheduleUpdate()
 	elseif event == "UNIT_AURA" then

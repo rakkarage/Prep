@@ -135,8 +135,16 @@ end
 -- ── Buff / aura checks ────────────────────────────────────────────────────────
 
 function Prep:ShouldCheckGroupUnit(unit)
-	return UnitExists(unit) and UnitIsConnected(unit)
-		and UnitInRange(unit) == true and not UnitIsDeadOrGhost(unit)
+	if not UnitExists(unit) or not UnitIsConnected(unit) or UnitIsDeadOrGhost(unit) then
+		return false
+	end
+
+	local inRange = UnitInRange(unit)
+	if issecretvalue(inRange) then
+		return false
+	end
+
+	return inRange
 end
 
 function Prep:AllGroupMembersHaveAura(hasAura)
@@ -218,14 +226,12 @@ local checks = {
 	{
 		key = "slotWeapon",
 		fn = function()
-			local hasMH, mhExp, mhCharges, mhEnchantID, hasOH, ohExp, ohCharges, ohEnchantID = GetWeaponEnchantInfo()
+			local hasMH, _, _, _, hasOH, _, _, _ = GetWeaponEnchantInfo()
 			if not hasMH then return false end
 			local ohItem = GetInventoryItemID("player", 17)
 			if ohItem then
-				local info = C_Item.GetItemInfo(ohItem)
-				local ohIsWeapon = info and
-					(info.itemEquipLoc == "INVTYPE_WEAPONOFFHAND" or info.itemEquipLoc == "INVTYPE_2HWEAPON")
-				if ohIsWeapon and not hasOH then return false end
+				local _, _, _, _, _, itemClassID = GetItemInfoInstant(ohItem)
+				if itemClassID == Enum.ItemClass.Weapon and not hasOH then return false end
 			end
 			return true
 		end

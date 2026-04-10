@@ -135,7 +135,8 @@ end
 -- ── Buff / aura checks ────────────────────────────────────────────────────────
 
 function Prep:ShouldCheckGroupUnit(unit)
-	return UnitExists(unit) and not UnitIsDeadOrGhost(unit)
+	return UnitExists(unit) and UnitIsConnected(unit)
+		and UnitInRange(unit) == true and not UnitIsDeadOrGhost(unit)
 end
 
 function Prep:AllGroupMembersHaveAura(hasAura)

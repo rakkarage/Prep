@@ -620,15 +620,19 @@ local function SlotStatus(key, label)
 	local s = Prep.db[key]
 	if not s then return label .. ": |cffaaaaaa(not set)|r" end
 	if s.petGUID then
-		local _, customName, _, _, _, _, _, speciesName = C_PetJournal.GetPetInfoByPetID(s.petGUID)
-		local name = (customName and customName ~= "") and customName or speciesName or "unknown"
-		return label .. ": " .. PetIcon(s.petGUID) .. "|cffffff00" .. name .. "|r"
+		local link = C_PetJournal.GetBattlePetLink(s.petGUID)
+		if not link then
+			local _, customName, _, _, _, _, _, speciesName = C_PetJournal.GetPetInfoByPetID(s.petGUID)
+			local name = (customName and customName ~= "") and customName or speciesName or "unknown"
+			link = "|cffffff00" .. name .. "|r"
+		end
+		return label .. ": " .. PetIcon(s.petGUID) .. link
 	elseif s.spellID then
-		local name = C_Spell.GetSpellName(s.spellID) or ("spell " .. s.spellID)
-		return label .. ": " .. SpellIcon(s.spellID) .. "|cffffff00" .. name .. "|r"
+		local link = C_Spell.GetSpellLink(s.spellID) or ("|cffffff00" .. (C_Spell.GetSpellName(s.spellID) or ("spell " .. s.spellID)) .. "|r")
+		return label .. ": " .. SpellIcon(s.spellID) .. link
 	elseif s.itemID then
-		local name = C_Item.GetItemNameByID(s.itemID) or ("item " .. s.itemID)
-		return label .. ": " .. ItemIcon(s.itemID) .. "|cffffff00" .. name .. "|r"
+		local link = select(2, GetItemInfo(s.itemID)) or ("|cffffff00" .. (C_Item.GetItemNameByID(s.itemID) or ("item " .. s.itemID)) .. "|r")
+		return label .. ": " .. ItemIcon(s.itemID) .. link
 	end
 	return label .. ": |cffff4444(unknown)|r"
 end
@@ -713,9 +717,9 @@ SlashCmdList["PREP"] = function(msg)
 			print("|cff00ccff[Prep]|r Item not found: |cffffff00" .. origArg .. "|r  (must be in bags)"); return
 		end
 		Prep.db[itemSlots[cmd]] = { itemID = id }
-		local name = C_Item.GetItemNameByID(id) or tostring(id)
+		local link = select(2, GetItemInfo(id)) or ("|cffffff00" .. (C_Item.GetItemNameByID(id) or tostring(id)) .. "|r")
 		local label = (cmd or ""):sub(1, 1):upper() .. (cmd or ""):sub(2)
-		print("|cff00ccff[Prep]|r " .. label .. " set to: " .. ItemIcon(id) .. "|cffffff00" .. name .. "|r")
+		print("|cff00ccff[Prep]|r " .. label .. " set to: " .. ItemIcon(id) .. link)
 		Prep:ScheduleUpdate()
 	elseif cmd == "buff" then
 		if origArg == "" then
@@ -726,8 +730,8 @@ SlashCmdList["PREP"] = function(msg)
 			print("|cff00ccff[Prep]|r Spell not found: |cffffff00" .. origArg .. "|r"); return
 		end
 		Prep.db.slotBuff = { spellID = id }
-		local name = C_Spell.GetSpellName(id) or tostring(id)
-		print("|cff00ccff[Prep]|r Buff set to: " .. SpellIcon(id) .. "|cffffff00" .. name .. "|r")
+		local link = C_Spell.GetSpellLink(id) or ("|cffffff00" .. (C_Spell.GetSpellName(id) or tostring(id)) .. "|r")
+		print("|cff00ccff[Prep]|r Buff set to: " .. SpellIcon(id) .. link)
 		Prep:ScheduleUpdate()
 	elseif cmd == "pet" then
 		if origArg == "" then
@@ -738,7 +742,8 @@ SlashCmdList["PREP"] = function(msg)
 			print("|cff00ccff[Prep]|r Pet not found: |cffffff00" .. origArg .. "|r"); return
 		end
 		Prep.db.slotPet = { petGUID = guid, petName = origArg }
-		print("|cff00ccff[Prep]|r Pet set to: " .. PetIcon(guid) .. "|cffffff00" .. name .. "|r")
+		local petLink = C_PetJournal.GetBattlePetLink(guid) or ("|cffffff00" .. name .. "|r")
+		print("|cff00ccff[Prep]|r Pet set to: " .. PetIcon(guid) .. petLink)
 		Prep:ScheduleUpdate()
 	elseif cmd == "clear" then
 		local k = "slot" .. arg:sub(1, 1):upper() .. arg:sub(2)

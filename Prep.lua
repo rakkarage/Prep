@@ -176,30 +176,41 @@ end
 function Prep:HasFlask()
 	if not self.db.slotFlask or not self.db.slotFlask.itemID then return true end
 	local name = C_Item.GetItemNameByID(self.db.slotFlask.itemID)
-	if not name then return true end
+	if not name then return false end
 	return AuraUtil.FindAuraByName(name, "player", "HELPFUL") ~= nil
 end
 
-function Prep:HasRune()
-	if not self.db.slotRune or not self.db.slotRune.itemID then return true end
-	local itemName = C_Item.GetItemNameByID(self.db.slotRune.itemID)
-	if not itemName then return true end
-
-	local searchTerm = itemName:lower():gsub("%s*%S+%s*$", ""):gsub("%s*%S+%s*$", "")
-	if searchTerm == "" then return true end
-
+local function FindPlayerHelpfulAura(matchFn)
 	local i = 1
 	while true do
 		local aura = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
 		if not aura then break end
-		if aura.name and not issecretvalue(aura.name) then
-			if aura.name:lower():find(searchTerm, 1, true) then
-				return true
-			end
-		end
+		if matchFn(aura) then return aura end
 		i = i + 1
 	end
-	return false
+	return nil
+end
+
+local function GetRuneSearchTerm(itemID)
+	if not itemID then return nil end
+	local itemName = C_Item.GetItemNameByID(itemID)
+	if not itemName then return nil end
+	local searchTerm = itemName:lower():gsub("%s*%S+%s*$", ""):gsub("%s*%S+%s*$", "")
+	if searchTerm == "" then return nil end
+	return searchTerm
+end
+
+local function FindRuneAuraByItemID(itemID)
+	local searchTerm = GetRuneSearchTerm(itemID)
+	if not searchTerm then return nil end
+	return FindPlayerHelpfulAura(function(aura)
+		return aura.name and not issecretvalue(aura.name) and aura.name:lower():find(searchTerm, 1, true)
+	end)
+end
+
+function Prep:HasRune()
+	if not self.db.slotRune or not self.db.slotRune.itemID then return true end
+	return FindRuneAuraByItemID(self.db.slotRune.itemID) ~= nil
 end
 
 -- Each check function returns TRUE if the condition is MET (good), FALSE if MISSING (bad → glow).
@@ -242,8 +253,9 @@ local checks = {
 		key = "slotPet",
 		fn = function()
 			if not Prep.db.slotPet then return true end
+			if not Prep.db.slotPet.petGUID then return false end
 			local g = C_PetJournal.GetSummonedPetGUID()
-			return g ~= nil and g ~= ""
+			return g ~= nil and g ~= "" and g == Prep.db.slotPet.petGUID
 		end
 	},
 }
@@ -616,9 +628,103 @@ end
 
 -- ── Status display ────────────────────────────────────────────────────────────
 
+local function FindPlayerHelpfulAuraByName(name)
+	if not name or name == "" then return nil end
+	return FindPlayerHelpfulAura(function(aura)
+		return aura.name == name
+	end)
+end
+
+local function FindFoodAura()
+	return FindPlayerHelpfulAuraByName("Well Fed") or FindPlayerHelpfulAuraByName("Hearty Well Fed")
+end
+
+local function FormatRemainingShort(seconds)
+	if not seconds or seconds <= 0 then return nil end
+	local s = math.floor(seconds + 0.5)
+	if s < 1 then s = 1 end
+	if s >= 3600 then
+		local h = math.floor(s / 3600)
+		local m = math.floor((s % 3600) / 60)
+		return ("%dh %02dm"):format(h, m)
+	end
+	if s >= 60 then
+		return ("%dm"):format(math.floor(s / 60))
+	end
+	return ("%ds"):format(s)
+end
+
+local function StatusDurationSuffix(key, s)
+	local aura = nil
+	if key == "slotBuff" and s.spellID then
+		local spellName = C_Spell.GetSpellName(s.spellID)
+		aura = spellName and FindPlayerHelpfulAuraByName(spellName) or nil
+	elseif key == "slotFood" then
+		aura = FindFoodAura()
+	elseif key == "slotFlask" and s.itemID then
+		local itemName = C_Item.GetItemNameByID(s.itemID)
+		aura = itemName and FindPlayerHelpfulAuraByName(itemName) or nil
+	elseif key == "slotRune" and s.itemID then
+		aura = FindRuneAuraByItemID(s.itemID)
+	end
+
+	if not aura or not aura.expirationTime or aura.expirationTime <= 0 then return "" end
+	local remain = aura.expirationTime - GetTime()
+	local txt = FormatRemainingShort(remain)
+	if not txt then return "" end
+	return " |cffaaaaaa(" .. txt .. " left)|r"
+end
+
+local function ShouldShowRuneCount(itemID)
+	if not itemID then return false end
+	local stackCount = select(8, GetItemInfo(itemID))
+	if stackCount and stackCount > 1 then return true end
+	local _, _, _, _, _, classID = GetItemInfoInstant(itemID)
+	return classID == Enum.ItemClass.Consumable
+end
+
+local function StatusCountSuffix(key, s)
+	if not s.itemID then return "" end
+	if key == "slotRune" and not ShouldShowRuneCount(s.itemID) then return "" end
+	local count = C_Item.GetItemCount(s.itemID)
+	if not count then return "" end
+	return " |cffaaaaaa[x" .. count .. "]|r"
+end
+
+local function StatusMarker(isConfigured, passed)
+	if not isConfigured then return "" end
+	return passed and "|cff00ff00[OK]|r " or "|cffff4444[MISS]|r "
+end
+
+local function EvaluateSlotState(key)
+	local s = Prep.db[key]
+	if not s then
+		return { configured = false, passed = true, countSuffix = "", durationSuffix = "", buttonSuffix = "" }
+	end
+	local passed = true
+	for _, c in ipairs(checks) do
+		if c.key == key then
+			passed = c.fn()
+			break
+		end
+	end
+	local btn = Prep:FindButton(s)
+	local buttonFound = btn ~= nil
+	local buttonSuffix = (not buttonFound) and " |cffff8888[no button]|r" or ""
+	return {
+		configured = true,
+		passed = passed,
+		countSuffix = StatusCountSuffix(key, s),
+		durationSuffix = StatusDurationSuffix(key, s),
+		buttonSuffix = buttonSuffix,
+	}
+end
+
 local function SlotStatus(key, label)
 	local s = Prep.db[key]
 	if not s then return label .. ": |cffaaaaaa(not set)|r" end
+	local state = EvaluateSlotState(key)
+	local marker = StatusMarker(state.configured, state.passed)
 	if s.petGUID then
 		local link = C_PetJournal.GetBattlePetLink(s.petGUID)
 		if not link then
@@ -626,31 +732,38 @@ local function SlotStatus(key, label)
 			local name = (customName and customName ~= "") and customName or speciesName or "unknown"
 			link = "|cffffff00" .. name .. "|r"
 		end
-		return label .. ": " .. PetIcon(s.petGUID) .. link
+		return label .. ": " .. marker .. PetIcon(s.petGUID) .. link .. state.buttonSuffix, state.configured, state.passed
 	elseif s.spellID then
 		local link = C_Spell.GetSpellLink(s.spellID) or ("|cffffff00" .. (C_Spell.GetSpellName(s.spellID) or ("spell " .. s.spellID)) .. "|r")
-		return label .. ": " .. SpellIcon(s.spellID) .. link
+		return label .. ": " .. marker .. SpellIcon(s.spellID) .. link .. state.durationSuffix .. state.buttonSuffix, state.configured, state.passed
 	elseif s.itemID then
 		local link = select(2, GetItemInfo(s.itemID)) or ("|cffffff00" .. (C_Item.GetItemNameByID(s.itemID) or ("item " .. s.itemID)) .. "|r")
-		return label .. ": " .. ItemIcon(s.itemID) .. link
+		return label .. ": " .. marker .. ItemIcon(s.itemID) .. link .. state.countSuffix .. state.durationSuffix .. state.buttonSuffix, state.configured, state.passed
 	end
-	return label .. ": |cffff4444(unknown)|r"
+	return label .. ": " .. marker .. "|cffff4444(unknown)|r" .. state.buttonSuffix, state.configured, state.passed
 end
 
 local function ShowStatus()
-	print("|cff00ccff[Prep]|r Current settings:")
+	print("|cff00ccff[Prep]|r Current settings (Group: " .. tostring(Prep.db.group) .. " | Combat: " .. tostring(Prep.db.combat) .. "):")
+	local missing = {}
 	for _, t in ipairs({
 		{ "slotBuff",  "Buff" }, { "slotFood", "Food" }, { "slotWeapon", "Weapon" },
 		{ "slotFlask", "Flask" }, { "slotRune", "Rune" }, { "slotPet", "Pet" },
 	}) do
-		print("  " .. SlotStatus(t[1], t[2]))
+		local line, configured, passed = SlotStatus(t[1], t[2])
+		print("  " .. line)
+		if configured and not passed then
+			missing[#missing + 1] = t[2]
+		end
+	end
+	if #missing > 0 then
+		print("  Missing: |cffff4444" .. table.concat(missing, ", ") .. "|r")
+	else
+		print("  |cff00ff00All good!|r")
 	end
 	if Prep.autoCombatPetSpellIDs then
 		print("  Combat pet: |cff00ff00auto (enabled)|r")
 	end
-	print("  Check Group Buff: " .. tostring(Prep.db.group))
-	print("  Enabled In Combat: " .. tostring(Prep.db.combat))
-	print(("  Highlight: alpha=%.2f  color=%.2f/%.2f/%.2f"):format(Prep.db.flashAlpha, Prep.db.flashR, Prep.db.flashG, Prep.db.flashB))
 end
 
 -- ── Slash commands ────────────────────────────────────────────────────────────

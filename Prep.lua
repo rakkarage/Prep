@@ -10,6 +10,9 @@ ns.Prep = {
 		flashR = 1.0,
 		flashG = 0.3,
 		flashB = 0.3,
+		warnR = 1.0,
+		warnG = 1.0,
+		warnB = 0.3,
 		slotBuff = nil,
 		slotFood = nil,
 		slotWeapon = nil,
@@ -208,6 +211,35 @@ local function FindRuneAuraByItemID(itemID)
 	end)
 end
 
+local function IsWeaponInOffhand()
+	local ohItem = GetInventoryItemID("player", 17)
+	if not ohItem then return false end
+	local _, _, _, _, _, itemClassID = GetItemInfoInstant(ohItem)
+	return itemClassID == Enum.ItemClass.Weapon
+end
+
+local function GetRequiredWeaponEnchantRemainSeconds()
+	local hasMH, mhMs, _, _, hasOH, ohMs = GetWeaponEnchantInfo()
+	if not hasMH then return nil end
+
+	local minRemain = nil
+	if mhMs and mhMs > 0 then
+		minRemain = mhMs / 1000
+	end
+
+	if IsWeaponInOffhand() then
+		if not hasOH then return nil end
+		if ohMs and ohMs > 0 then
+			local ohRemain = ohMs / 1000
+			if not minRemain or ohRemain < minRemain then
+				minRemain = ohRemain
+			end
+		end
+	end
+
+	return minRemain
+end
+
 function Prep:HasRune()
 	if not self.db.slotRune or not self.db.slotRune.itemID then return true end
 	return FindRuneAuraByItemID(self.db.slotRune.itemID) ~= nil
@@ -237,14 +269,7 @@ local checks = {
 	{
 		key = "slotWeapon",
 		fn = function()
-			local hasMH, _, _, _, hasOH, _, _, _ = GetWeaponEnchantInfo()
-			if not hasMH then return false end
-			local ohItem = GetInventoryItemID("player", 17)
-			if ohItem then
-				local _, _, _, _, _, itemClassID = GetItemInfoInstant(ohItem)
-				if itemClassID == Enum.ItemClass.Weapon and not hasOH then return false end
-			end
-			return true
+			return GetRequiredWeaponEnchantRemainSeconds() ~= nil
 		end
 	},
 	{ key = "slotFlask", fn = function() return Prep:HasFlask() end },
@@ -259,6 +284,50 @@ local checks = {
 		end
 	},
 }
+
+local EXPIRING_WARNING_THRESHOLD = 180
+
+local function FindPlayerHelpfulAuraByName(name)
+	if not name or name == "" then return nil end
+	return FindPlayerHelpfulAura(function(aura)
+		return aura.name == name
+	end)
+end
+
+local function FindFoodAura()
+	return FindPlayerHelpfulAuraByName("Well Fed") or FindPlayerHelpfulAuraByName("Hearty Well Fed")
+end
+
+local function GetSlotRemainingSeconds(key, s)
+	if not s then return nil end
+
+	if key == "slotWeapon" then
+		return GetRequiredWeaponEnchantRemainSeconds()
+	end
+
+	local aura = nil
+	if key == "slotBuff" and s.spellID then
+		local spellName = C_Spell.GetSpellName(s.spellID)
+		aura = spellName and FindPlayerHelpfulAuraByName(spellName) or nil
+	elseif key == "slotFood" then
+		aura = FindFoodAura()
+	elseif key == "slotFlask" and s.itemID then
+		local itemName = C_Item.GetItemNameByID(s.itemID)
+		aura = itemName and FindPlayerHelpfulAuraByName(itemName) or nil
+	elseif key == "slotRune" and s.itemID then
+		aura = FindRuneAuraByItemID(s.itemID)
+	end
+
+	if not aura or not aura.expirationTime or aura.expirationTime <= 0 then return nil end
+	local remain = aura.expirationTime - GetTime()
+	if remain <= 0 then return nil end
+	return remain
+end
+
+local function IsExpiringSoon(key, s)
+	local remain = GetSlotRemainingSeconds(key, s)
+	return remain ~= nil and remain < EXPIRING_WARNING_THRESHOLD
+end
 
 -- ── Auto combat pet (Hunter / Warlock / Death Knight) ─────────────────────────
 
@@ -316,13 +385,16 @@ end
 
 -- ── Glow ──────────────────────────────────────────────────────────────────────
 
-function Prep:SetGlow(btn, show)
+function Prep:SetGlow(btn, show, r, g, b)
 	if not btn then return end
+	local cr = r or self.db.flashR
+	local cg = g or self.db.flashG
+	local cb = b or self.db.flashB
 	for _, k in ipairs({ "SpellHighlightTexture", "Flash" }) do
 		local t = btn[k]
 		if t then
 			if show then
-				t:Show(); t:SetAlpha(self.db.flashAlpha); t:SetVertexColor(self.db.flashR, self.db.flashG, self.db.flashB)
+				t:Show(); t:SetAlpha(self.db.flashAlpha); t:SetVertexColor(cr, cg, cb)
 			else
 				t:Hide(); t:SetVertexColor(1, 1, 1); t:SetAlpha(1)
 			end
@@ -352,13 +424,20 @@ function Prep:ScheduleUpdate()
 			return
 		end
 		self:ClearGlows()
-		-- Iterate checks and glow buttons whose conditions are FALSE (missing).
+		-- Iterate checks and glow buttons for missing OR expiring-soon slots.
 		for _, c in ipairs(checks) do
 			if self.db[c.key] then
-				local btn = self:FindButton(self.db[c.key])
-				if btn and not c.fn() then
-					self:SetGlow(btn, true)
-					self.activeGlows[c.key] = btn
+				local slotSetting = self.db[c.key]
+				local btn = self:FindButton(slotSetting)
+				if btn then
+					local passed = c.fn()
+					if not passed then
+						self:SetGlow(btn, true)
+						self.activeGlows[c.key] = btn
+					elseif IsExpiringSoon(c.key, slotSetting) then
+						self:SetGlow(btn, true, self.db.warnR, self.db.warnG, self.db.warnB)
+						self.activeGlows[c.key] = btn
+					end
 				end
 			end
 		end
@@ -628,17 +707,6 @@ end
 
 -- ── Status display ────────────────────────────────────────────────────────────
 
-local function FindPlayerHelpfulAuraByName(name)
-	if not name or name == "" then return nil end
-	return FindPlayerHelpfulAura(function(aura)
-		return aura.name == name
-	end)
-end
-
-local function FindFoodAura()
-	return FindPlayerHelpfulAuraByName("Well Fed") or FindPlayerHelpfulAuraByName("Hearty Well Fed")
-end
-
 local function FormatRemainingShort(seconds)
 	if not seconds or seconds <= 0 then return nil end
 	local s = math.floor(seconds + 0.5)
@@ -655,21 +723,7 @@ local function FormatRemainingShort(seconds)
 end
 
 local function StatusDurationSuffix(key, s)
-	local aura = nil
-	if key == "slotBuff" and s.spellID then
-		local spellName = C_Spell.GetSpellName(s.spellID)
-		aura = spellName and FindPlayerHelpfulAuraByName(spellName) or nil
-	elseif key == "slotFood" then
-		aura = FindFoodAura()
-	elseif key == "slotFlask" and s.itemID then
-		local itemName = C_Item.GetItemNameByID(s.itemID)
-		aura = itemName and FindPlayerHelpfulAuraByName(itemName) or nil
-	elseif key == "slotRune" and s.itemID then
-		aura = FindRuneAuraByItemID(s.itemID)
-	end
-
-	if not aura or not aura.expirationTime or aura.expirationTime <= 0 then return "" end
-	local remain = aura.expirationTime - GetTime()
+	local remain = GetSlotRemainingSeconds(key, s)
 	local txt = FormatRemainingShort(remain)
 	if not txt then return "" end
 	return " |cffaaaaaa(" .. txt .. " left)|r"

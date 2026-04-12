@@ -590,9 +590,12 @@ Prep.events:SetScript("OnEvent", function(self, event, arg1)
 			end)
 		end
 		Prep:ScheduleUpdate()
-	elseif event == "CHALLENGE_MODE_START" or event == "PVP_MATCH_ACTIVE" then
+	elseif event == "CHALLENGE_MODE_START" then
 		Prep.isMatchActive = true
 		Prep:ClearGlows()
+	elseif event == "PVP_MATCH_ACTIVE" then
+		-- Arena/BG activation happens during Preparation; keep updates allowed until Engaged state.
+		Prep:ScheduleUpdate()
 	elseif event == "CHALLENGE_MODE_COMPLETED" or event == "CHALLENGE_MODE_RESET" or event == "PVP_MATCH_COMPLETE" then
 		Prep.isMatchActive = false
 		Prep:ScheduleUpdate()

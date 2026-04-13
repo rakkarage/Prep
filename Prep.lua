@@ -290,7 +290,7 @@ local EXPIRING_WARNING_THRESHOLD = 180
 local function FindPlayerHelpfulAuraByName(name)
 	if not name or name == "" then return nil end
 	return FindPlayerHelpfulAura(function(aura)
-		return aura.name == name
+		return aura.name and not issecretvalue(aura.name) and aura.name == name
 	end)
 end
 

@@ -2,35 +2,34 @@
 
 local addonName, ns = ...
 
-ns.Prep = {
-	defaults = {
-		group = true,
-		combat = false,
-		flashAlpha = 1.0,
-		flashR = 1.0,
-		flashG = 0.3,
-		flashB = 0.3,
-		warnR = 1.0,
-		warnG = 1.0,
-		warnB = 0.3,
-		slotBuff = nil,
-		slotFood = nil,
-		slotWeapon = nil,
-		slotFlask = nil,
-		slotRune = nil,
-		slotPet = nil,
-	},
-	db = {},
-	isMatchActive = false,
-	activeGlows = {},
-	pendingUpdate = false,
-	pendingUpdateSlow = false,
-	autoCombatPetSpellIDs = nil,
-	needsPetRefresh = false,
-	petRefreshAttempts = 0,
-	petRefreshMaxAttempts = 12,
-}
+ns.Prep = CreateFrame("Frame")
 local Prep = ns.Prep
+Prep.defaults = {
+	group = true,
+	combat = false,
+	flashAlpha = 1.0,
+	flashR = 1.0,
+	flashG = 0.3,
+	flashB = 0.3,
+	warnR = 1.0,
+	warnG = 1.0,
+	warnB = 0.3,
+	slotBuff = nil,
+	slotFood = nil,
+	slotWeapon = nil,
+	slotFlask = nil,
+	slotRune = nil,
+	slotPet = nil,
+}
+Prep.db = {}
+Prep.isMatchActive = false
+Prep.activeGlows = {}
+Prep.pendingUpdate = false
+Prep.pendingUpdateSlow = false
+Prep.autoCombatPetSpellIDs = nil
+Prep.needsPetRefresh = false
+Prep.petRefreshAttempts = 0
+Prep.petRefreshMaxAttempts = 12
 
 function Prep:IsRestrictedMode()
 	local pvpState = C_PvP.GetActiveMatchState()
@@ -545,18 +544,16 @@ function Prep:AttemptPetRefresh()
 	end)
 end
 
-Prep.events = CreateFrame("Frame")
-Prep.events:RegisterEvent("ADDON_LOADED")
-Prep.events:RegisterEvent("PLAYER_ENTERING_WORLD")
-Prep.events:RegisterEvent("CHALLENGE_MODE_START")
-Prep.events:RegisterEvent("CHALLENGE_MODE_COMPLETED")
-Prep.events:RegisterEvent("CHALLENGE_MODE_RESET")
-Prep.events:RegisterEvent("PVP_MATCH_ACTIVE")
-Prep.events:RegisterEvent("PVP_MATCH_COMPLETE")
-Prep.events:RegisterEvent("PVP_MATCH_STATE_CHANGED")
-Prep.events:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-
-Prep.events:SetScript("OnEvent", function(self, event, arg1)
+Prep:RegisterEvent("ADDON_LOADED")
+Prep:RegisterEvent("PLAYER_ENTERING_WORLD")
+Prep:RegisterEvent("CHALLENGE_MODE_START")
+Prep:RegisterEvent("CHALLENGE_MODE_COMPLETED")
+Prep:RegisterEvent("CHALLENGE_MODE_RESET")
+Prep:RegisterEvent("PVP_MATCH_ACTIVE")
+Prep:RegisterEvent("PVP_MATCH_COMPLETE")
+Prep:RegisterEvent("PVP_MATCH_STATE_CHANGED")
+Prep:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+Prep:SetScript("OnEvent", function(self, event, arg1)
 	if event == "ADDON_LOADED" then
 		if arg1 ~= addonName then return end
 		PrepDB = PrepDB or {}

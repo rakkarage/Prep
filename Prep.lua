@@ -755,32 +755,38 @@ local function StatusCountSuffix(key, s)
 	return " |cffaaaaaa[x" .. count .. "]|r"
 end
 
-local function StatusMarker(isConfigured, passed)
+local function StatusMarker(isConfigured, passed, buy)
 	if not isConfigured then return "" end
+	if buy then return "|cffffbb00[BUY]|r " end
 	return passed and "|cff00ff00[OK]|r " or "|cffff4444[MISS]|r "
 end
 
 local function EvaluateSlotState(key)
 	local s = Prep.db[key]
 	if not s then
-		return { configured = false, passed = true, countSuffix = "", durationSuffix = "", buttonSuffix = "" }
+		return { configured = false, passed = true, buy = false, countSuffix = "", durationSuffix = "", buttonSuffix = "" }
 	end
 	local passed = true
-	for _, c in ipairs(checks) do
-		if c.key == key then
-			passed = c.fn()
-			break
+	local buy = false
+	if s.itemID and (C_Item.GetItemCount(s.itemID) or 0) == 0 then
+		buy = true
+		passed = false
+	else
+		for _, c in ipairs(checks) do
+			if c.key == key then
+				passed = c.fn()
+				break
+			end
 		end
 	end
 	local btn = Prep:FindButton(s)
-	local buttonFound = btn ~= nil
-	local buttonSuffix = (not buttonFound) and " |cffff8888[no button]|r" or ""
 	return {
 		configured = true,
 		passed = passed,
+		buy = buy,
 		countSuffix = StatusCountSuffix(key, s),
 		durationSuffix = StatusDurationSuffix(key, s),
-		buttonSuffix = buttonSuffix,
+		buttonSuffix = "",
 	}
 end
 
@@ -788,7 +794,7 @@ local function SlotStatus(key, label)
 	local s = Prep.db[key]
 	if not s then return label .. ": |cffaaaaaa(not set)|r" end
 	local state = EvaluateSlotState(key)
-	local marker = StatusMarker(state.configured, state.passed)
+	local marker = StatusMarker(state.configured, state.passed, state.buy)
 	if s.petGUID then
 		local link = C_PetJournal.GetBattlePetLink(s.petGUID)
 		if not link then
@@ -847,12 +853,13 @@ local function PrintHelp()
 		"/prep combat - toggle enabled in combat (not m+ or pvp)",
 		"/prep alpha <0.1-1.0>",
 		"/prep color <r> <g> <b>  (0.0-1.0)",
+		"/prep warncolor <r> <g> <b>  (0.0-1.0)",
 		"/prep status",
 	}) do print("  |cffffff00" .. l .. "|r") end
 end
 
 local ALL_CMDS = {
-	"buff", "food", "weapon", "flask", "rune", "pet", "clear", "reset", "group", "combat", "alpha", "color", "status",
+	"buff", "food", "weapon", "flask", "rune", "pet", "clear", "reset", "group", "combat", "alpha", "color", "warncolor", "status",
 }
 
 local function ResolveCmd(input)
@@ -897,6 +904,15 @@ SlashCmdList["PREP"] = function(msg)
 		local link = select(2, GetItemInfo(id)) or ("|cffffff00" .. (C_Item.GetItemNameByID(id) or tostring(id)) .. "|r")
 		local label = (cmd or ""):sub(1, 1):upper() .. (cmd or ""):sub(2)
 		print("|cff00ccff[Prep]|r " .. label .. " set to: " .. ItemIcon(id) .. link)
+		Prep:ScheduleUpdate()
+	elseif cmd == "warncolor" then
+		local r, g, b = origArg:match("^(%S+)%s+(%S+)%s+(%S+)$")
+		r, g, b = tonumber(r), tonumber(g), tonumber(b)
+		if not r or not g or not b then
+			print("|cff00ccff[Prep]|r Usage: /prep warncolor <r> <g> <b>"); return
+		end
+		Prep.db.warnR, Prep.db.warnG, Prep.db.warnB = r, g, b
+		print(("|cff00ccff[Prep]|r Warn color set to %.2f %.2f %.2f"):format(r, g, b))
 		Prep:ScheduleUpdate()
 	elseif cmd == "buff" then
 		if origArg == "" then

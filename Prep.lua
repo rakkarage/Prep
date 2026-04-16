@@ -584,7 +584,7 @@ Prep:SetScript("OnEvent", function(self, event, ...)
 			"PET_JOURNAL_LIST_UPDATE",
 			"ACTIONBAR_PAGE_CHANGED",
 		}) do self:RegisterEvent(e) end
-		self:UnregisterEvent("ADDON_LOADED")
+		self:UnregisterEvent(event)
 	elseif event == "PLAYER_ENTERING_WORLD" then
 		self.isMatchActive = false
 		if self.needsPetRefresh then

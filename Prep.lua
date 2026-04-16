@@ -167,7 +167,6 @@ function Prep:AllGroupMembersHaveAura(hasAura)
 end
 
 function Prep:HasAura(name, group)
-	-- Check if player has the aura. Always required.
 	if not AuraUtil.FindAuraByName(name, "player", "HELPFUL") then return false end
 	if group then
 		return self:AllGroupMembersHaveAura(function(unit)
@@ -540,8 +539,8 @@ function Prep:AttemptPetRefresh()
 
 	-- Retry with a short delay while the pet journal continues to populate after login.
 	C_Timer.After(0.5, function()
-		if Prep.needsPetRefresh then
-			Prep:AttemptPetRefresh()
+		if self.needsPetRefresh then
+			self:AttemptPetRefresh()
 		end
 	end)
 end
@@ -580,65 +579,65 @@ Prep:SetScript("OnEvent", function(self, event, arg1)
 		}) do self:RegisterEvent(e) end
 		self:UnregisterEvent("ADDON_LOADED")
 	elseif event == "PLAYER_ENTERING_WORLD" then
-		Prep.isMatchActive = false
-		if Prep.needsPetRefresh then
+		self.isMatchActive = false
+		if self.needsPetRefresh then
 			C_Timer.After(1.0, function()
-				if Prep.needsPetRefresh then
-					Prep:AttemptPetRefresh()
+				if self.needsPetRefresh then
+					self:AttemptPetRefresh()
 				end
 			end)
 		end
-		Prep:ScheduleUpdate()
+		self:ScheduleUpdate()
 	elseif event == "CHALLENGE_MODE_START" then
-		Prep.isMatchActive = true
-		Prep:ClearGlows()
+		self.isMatchActive = true
+		self:ClearGlows()
 	elseif event == "PVP_MATCH_ACTIVE" then
 		-- Arena/BG activation happens during Preparation; keep updates allowed until Engaged state.
-		Prep:ScheduleUpdate()
+		self:ScheduleUpdate()
 	elseif event == "CHALLENGE_MODE_COMPLETED" or event == "CHALLENGE_MODE_RESET" or event == "PVP_MATCH_COMPLETE" then
-		Prep.isMatchActive = false
-		Prep:ScheduleUpdate()
+		self.isMatchActive = false
+		self:ScheduleUpdate()
 	elseif event == "PVP_MATCH_STATE_CHANGED" or event == "ZONE_CHANGED_NEW_AREA" then
 		-- Force a re-check of the restricted mode
-		Prep:ScheduleUpdate()
+		self:ScheduleUpdate()
 	elseif event == "PLAYER_REGEN_DISABLED" then
-		if not Prep.db.combat then
-			Prep:ClearGlows()
+		if not self.db.combat then
+			self:ClearGlows()
 		else
-			Prep:ScheduleUpdate()
+			self:ScheduleUpdate()
 		end
 	elseif event == "PLAYER_REGEN_ENABLED" then
 		C_Timer.After(1.0, function()
-			if not Prep:IsRestrictedMode() then Prep:ScheduleUpdate() end
+			if not self:IsRestrictedMode() then self:ScheduleUpdate() end
 		end)
 	elseif event == "PET_JOURNAL_LIST_UPDATE" then
-		if Prep.needsPetRefresh then
-			Prep:AttemptPetRefresh()
+		if self.needsPetRefresh then
+			self:AttemptPetRefresh()
 		end
-		Prep:ScheduleUpdate()
+		self:ScheduleUpdate()
 	elseif event == "UNIT_AURA" then
 		if arg1 == "player" then
-			Prep:ScheduleUpdate()
-		elseif Prep.db.group and (arg1:find("party") or arg1:find("raid")) then
-			Prep:ScheduleUpdateSlow()
+			self:ScheduleUpdate()
+		elseif self.db.group and (arg1:find("party") or arg1:find("raid")) then
+			self:ScheduleUpdateSlow()
 		end
 	elseif event == "ACTIVE_TALENT_GROUP_CHANGED" then
-		Prep:InitAutoCombatPet()
-		Prep:ScheduleUpdate()
+		self:InitAutoCombatPet()
+		self:ScheduleUpdate()
 	elseif event == "UNIT_FLAGS" then
 		if arg1 == "player" then
 			if UnitOnTaxi("player") then
-				Prep:ClearGlows()
+				self:ClearGlows()
 			else
-				Prep:ScheduleUpdate()
+				self:ScheduleUpdate()
 			end
-		elseif Prep.db.group and (arg1:find("party") or arg1:find("raid")) then
-			Prep:ScheduleUpdateSlow()
+		elseif self.db.group and (arg1:find("party") or arg1:find("raid")) then
+			self:ScheduleUpdateSlow()
 		end
 	elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then
-		Prep:ScheduleUpdate()
+		self:ScheduleUpdate()
 	else
-		Prep:ScheduleUpdate()
+		self:ScheduleUpdate()
 	end
 end)
 

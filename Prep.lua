@@ -554,15 +554,22 @@ Prep:RegisterEvent("PVP_MATCH_ACTIVE")
 Prep:RegisterEvent("PVP_MATCH_COMPLETE")
 Prep:RegisterEvent("PVP_MATCH_STATE_CHANGED")
 Prep:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-Prep:SetScript("OnEvent", function(self, event, arg1)
+Prep:SetScript("OnEvent", function(self, event, ...)
 	if event == "ADDON_LOADED" then
-		if arg1 ~= Prep.name then return end
+		local name = ...
+		if name ~= self.name then return end
+
 		PrepDB = PrepDB or {}
-		Prep.db = PrepDB
-		for k, v in pairs(Prep.defaults) do if Prep.db[k] == nil then Prep.db[k] = v end end
-		Prep.needsPetRefresh = true
-		Prep.petRefreshAttempts = 0
-		Prep:InitAutoCombatPet()
+		self.db = PrepDB
+		for k, v in pairs(self.defaults) do
+			if self.db[k] == nil then
+				self.db[k] = v
+			end
+		end
+
+		self.needsPetRefresh = true
+		self.petRefreshAttempts = 0
+		self:InitAutoCombatPet()
 		for _, e in ipairs({
 			"EDIT_MODE_LAYOUTS_UPDATED",
 			"ACTIVE_TALENT_GROUP_CHANGED",
@@ -616,22 +623,24 @@ Prep:SetScript("OnEvent", function(self, event, arg1)
 		end
 		self:ScheduleUpdate()
 	elseif event == "UNIT_AURA" then
-		if arg1 == "player" then
+		local unit = ...
+		if unit == "player" then
 			self:ScheduleUpdate()
-		elseif self.db.group and (arg1:find("party") or arg1:find("raid")) then
+		elseif self.db.group and (unit:find("party") or unit:find("raid")) then
 			self:ScheduleUpdateSlow()
 		end
 	elseif event == "ACTIVE_TALENT_GROUP_CHANGED" then
 		self:InitAutoCombatPet()
 		self:ScheduleUpdate()
 	elseif event == "UNIT_FLAGS" then
-		if arg1 == "player" then
+		local unit = ...
+		if unit == "player" then
 			if UnitOnTaxi("player") then
 				self:ClearGlows()
 			else
 				self:ScheduleUpdate()
 			end
-		elseif self.db.group and (arg1:find("party") or arg1:find("raid")) then
+		elseif self.db.group and (unit:find("party") or unit:find("raid")) then
 			self:ScheduleUpdateSlow()
 		end
 	elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then

@@ -4,6 +4,8 @@ local addonName, ns = ...
 
 ns.Prep = CreateFrame("Frame")
 local Prep = ns.Prep
+Prep.name = addonName
+
 Prep.defaults = {
 	group = true,
 	combat = false,
@@ -555,7 +557,7 @@ Prep:RegisterEvent("PVP_MATCH_STATE_CHANGED")
 Prep:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 Prep:SetScript("OnEvent", function(self, event, arg1)
 	if event == "ADDON_LOADED" then
-		if arg1 ~= addonName then return end
+		if arg1 ~= Prep.name then return end
 		PrepDB = PrepDB or {}
 		Prep.db = PrepDB
 		for k, v in pairs(Prep.defaults) do if Prep.db[k] == nil then Prep.db[k] = v end end

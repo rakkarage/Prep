@@ -9,13 +9,14 @@ Prep.name = addonName
 Prep.defaults = {
 	group = true,
 	combat = false,
-	flashAlpha = 1.0,
 	flashR = 1.0,
 	flashG = 0.3,
 	flashB = 0.3,
+	flashA = 1.0,
 	warnR = 1.0,
 	warnG = 1.0,
 	warnB = 0.3,
+	warnA = 1.0,
 	slotBuff = nil,
 	slotFood = nil,
 	slotWeapon = nil,
@@ -382,16 +383,25 @@ end
 
 -- ── Glow ──────────────────────────────────────────────────────────────────────
 
-function Prep:SetGlow(btn, show, r, g, b)
+function Prep:SetGlow(btn, show, r, g, b, a, isWarn)
 	if not btn then return end
-	local cr = r or self.db.flashR
-	local cg = g or self.db.flashG
-	local cb = b or self.db.flashB
+	local cr, cg, cb, ca
+	if isWarn then
+		cr = r or self.db.warnR
+		cg = g or self.db.warnG
+		cb = b or self.db.warnB
+		ca = a or self.db.warnA or 1.0
+	else
+		cr = r or self.db.flashR
+		cg = g or self.db.flashG
+		cb = b or self.db.flashB
+		ca = a or self.db.flashA or 1.0
+	end
 	for _, k in ipairs({ "SpellHighlightTexture", "Flash" }) do
 		local t = btn[k]
 		if t then
 			if show then
-				t:Show(); t:SetAlpha(self.db.flashAlpha); t:SetVertexColor(cr, cg, cb)
+				t:Show(); t:SetAlpha(ca); t:SetVertexColor(cr, cg, cb)
 			else
 				t:Hide(); t:SetVertexColor(1, 1, 1); t:SetAlpha(1)
 			end
@@ -432,7 +442,7 @@ function Prep:ScheduleUpdate()
 						self:SetGlow(btn, true)
 						self.activeGlows[c.key] = btn
 					elseif IsExpiringSoon(c.key, slotSetting) then
-						self:SetGlow(btn, true, self.db.warnR, self.db.warnG, self.db.warnB)
+						self:SetGlow(btn, true, self.db.warnR, self.db.warnG, self.db.warnB, self.db.warnA, true)
 						self.activeGlows[c.key] = btn
 					end
 				end
@@ -848,9 +858,8 @@ local function PrintHelp()
 		"/prep reset",
 		"/prep group - toggle check group buff",
 		"/prep combat - toggle enabled in combat (not m+ or pvp)",
-		"/prep alpha <0.1-1.0>",
-		"/prep color <r> <g> <b>  (0.0-1.0)",
-		"/prep warncolor <r> <g> <b>  (0.0-1.0)",
+		"/prep color <r> <g> <b> [a]  (0.0-1.0, optional alpha)",
+		"/prep warncolor <r> <g> <b> [a]  (0.0-1.0, optional alpha)",
 		"/prep status",
 	}) do print("  |cffffff00" .. l .. "|r") end
 end
@@ -903,13 +912,19 @@ SlashCmdList["PREP"] = function(msg)
 		print("|cff00ccff[Prep]|r " .. label .. " set to: " .. ItemIcon(id) .. link)
 		Prep:ScheduleUpdate()
 	elseif cmd == "warncolor" then
-		local r, g, b = origArg:match("^(%S+)%s+(%S+)%s+(%S+)$")
+		local r, g, b, a = origArg:match("^(%S+)%s+(%S+)%s+(%S+)%s*(%S*)$")
 		r, g, b = tonumber(r), tonumber(g), tonumber(b)
+		a = tonumber(a)
 		if not r or not g or not b then
-			print("|cff00ccff[Prep]|r Usage: /prep warncolor <r> <g> <b>"); return
+			print("|cff00ccff[Prep]|r Usage: /prep warncolor <r> <g> <b> [a]"); return
 		end
 		Prep.db.warnR, Prep.db.warnG, Prep.db.warnB = r, g, b
-		print(("|cff00ccff[Prep]|r Warn color set to %.2f %.2f %.2f"):format(r, g, b))
+		if a then
+			Prep.db.warnA = a
+			print(("|cff00ccff[Prep]|r Warn color set to %.2f %.2f %.2f %.2f"):format(r, g, b, a))
+		else
+			print(("|cff00ccff[Prep]|r Warn color set to %.2f %.2f %.2f"):format(r, g, b))
+		end
 		Prep:ScheduleUpdate()
 	elseif cmd == "buff" then
 		if origArg == "" then
@@ -956,22 +971,20 @@ SlashCmdList["PREP"] = function(msg)
 		Prep.db.group = not Prep.db.group
 		print("|cff00ccff[Prep]|r Group buff check: " .. (Prep.db.group and "|cff00ff00ON|r" or "|cffff4444OFF|r"))
 		Prep:ScheduleUpdate()
-	elseif cmd == "alpha" then
-		local v = tonumber(origArg)
-		if not v or v < 0.1 or v > 1.0 then
-			print("|cff00ccff[Prep]|r Usage: /prep alpha <0.1-1.0>"); return
-		end
-		Prep.db.flashAlpha = v
-		print("|cff00ccff[Prep]|r Alpha set to " .. v)
-		Prep:ScheduleUpdate()
 	elseif cmd == "color" then
-		local r, g, b = origArg:match("^(%S+)%s+(%S+)%s+(%S+)$")
+		local r, g, b, a = origArg:match("^(%S+)%s+(%S+)%s+(%S+)%s*(%S*)$")
 		r, g, b = tonumber(r), tonumber(g), tonumber(b)
+		a = tonumber(a)
 		if not r or not g or not b then
-			print("|cff00ccff[Prep]|r Usage: /prep color <r> <g> <b>"); return
+			print("|cff00ccff[Prep]|r Usage: /prep color <r> <g> <b> [a]"); return
 		end
 		Prep.db.flashR, Prep.db.flashG, Prep.db.flashB = r, g, b
-		print(("|cff00ccff[Prep]|r Color set to %.2f %.2f %.2f"):format(r, g, b))
+		if a then
+			Prep.db.flashA = a
+			print(("|cff00ccff[Prep]|r Color set to %.2f %.2f %.2f %.2f"):format(r, g, b, a))
+		else
+			print(("|cff00ccff[Prep]|r Color set to %.2f %.2f %.2f"):format(r, g, b))
+		end
 		Prep:ScheduleUpdate()
 	elseif cmd == "status" then
 		ShowStatus()

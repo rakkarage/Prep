@@ -24,7 +24,6 @@ Prep.defaults = {
 	slotRune = nil,
 	slotPet = nil,
 }
-Prep.db = {}
 Prep.isMatchActive = false
 Prep.activeGlows = {}
 Prep.pendingUpdate = false
@@ -46,7 +45,6 @@ function Prep:IsRestrictedMode()
 	end
 	return false
 end
-
 
 local function GetMacroSpellID(macroID)
 	local spellID = GetMacroSpell(macroID)
@@ -91,7 +89,6 @@ function Prep:FindButtonForType(matchType, matchID)
 
 			if t == matchType and id == matchID then
 				found = true
-
 			elseif t == "macro" then
 				-- Step A: Get the name written on the button (The "Label")
 				local label = GetActionText(s)

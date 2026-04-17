@@ -912,6 +912,7 @@ SlashCmdList["PREP"] = function(msg)
 		print("|cff00ccff[Prep]|r " .. label .. " set to: " .. ItemIcon(id) .. link)
 		Prep:ScheduleUpdate()
 	elseif cmd == "warncolor" then
+		origArg = origArg:gsub(",", " ")
 		local r, g, b, a = origArg:match("^(%S+)%s+(%S+)%s+(%S+)%s*(%S*)$")
 		r, g, b = tonumber(r), tonumber(g), tonumber(b)
 		a = tonumber(a)
@@ -924,6 +925,22 @@ SlashCmdList["PREP"] = function(msg)
 			print(("|cff00ccff[Prep]|r Warn color set to %.2f %.2f %.2f %.2f"):format(r, g, b, a))
 		else
 			print(("|cff00ccff[Prep]|r Warn color set to %.2f %.2f %.2f"):format(r, g, b))
+		end
+		Prep:ScheduleUpdate()
+	elseif cmd == "color" then
+		origArg = origArg:gsub(",", " ")
+		local r, g, b, a = origArg:match("^(%S+)%s+(%S+)%s+(%S+)%s*(%S*)$")
+		r, g, b = tonumber(r), tonumber(g), tonumber(b)
+		a = tonumber(a)
+		if not r or not g or not b then
+			print("|cff00ccff[Prep]|r Usage: /prep color <r> <g> <b> [a]"); return
+		end
+		Prep.db.flashR, Prep.db.flashG, Prep.db.flashB = r, g, b
+		if a then
+			Prep.db.flashA = a
+			print(("|cff00ccff[Prep]|r Color set to %.2f %.2f %.2f %.2f"):format(r, g, b, a))
+		else
+			print(("|cff00ccff[Prep]|r Color set to %.2f %.2f %.2f"):format(r, g, b))
 		end
 		Prep:ScheduleUpdate()
 	elseif cmd == "buff" then
@@ -970,21 +987,6 @@ SlashCmdList["PREP"] = function(msg)
 	elseif cmd == "group" then
 		Prep.db.group = not Prep.db.group
 		print("|cff00ccff[Prep]|r Group buff check: " .. (Prep.db.group and "|cff00ff00ON|r" or "|cffff4444OFF|r"))
-		Prep:ScheduleUpdate()
-	elseif cmd == "color" then
-		local r, g, b, a = origArg:match("^(%S+)%s+(%S+)%s+(%S+)%s*(%S*)$")
-		r, g, b = tonumber(r), tonumber(g), tonumber(b)
-		a = tonumber(a)
-		if not r or not g or not b then
-			print("|cff00ccff[Prep]|r Usage: /prep color <r> <g> <b> [a]"); return
-		end
-		Prep.db.flashR, Prep.db.flashG, Prep.db.flashB = r, g, b
-		if a then
-			Prep.db.flashA = a
-			print(("|cff00ccff[Prep]|r Color set to %.2f %.2f %.2f %.2f"):format(r, g, b, a))
-		else
-			print(("|cff00ccff[Prep]|r Color set to %.2f %.2f %.2f"):format(r, g, b))
-		end
 		Prep:ScheduleUpdate()
 	elseif cmd == "status" then
 		ShowStatus()

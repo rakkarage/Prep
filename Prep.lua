@@ -34,18 +34,15 @@ Prep.petRefreshAttempts = 0
 Prep.petRefreshMaxAttempts = 12
 
 function Prep:IsRestrictedMode()
-	local pvpState = C_PvP.GetActiveMatchState()
-	local isMatchInProgress = (pvpState == Enum.PvPMatchState.Engaged)
-
-	if self.isMatchActive or isMatchInProgress or UnitOnTaxi("player") or
-		(EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive()) then
+	if self.isMatchActive or
+		(C_PvP.GetActiveMatchState() == Enum.PvPMatchState.Engaged) or
+		(EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive()) or
+		(InCombatLockdown() and not self.db.combat) or
+		UnitIsDeadOrGhost("player") or
+		UnitOnTaxi("player")
+	then
 		return true
 	end
-
-	if InCombatLockdown() and not self.db.combat then
-		return true
-	end
-
 	return false
 end
 

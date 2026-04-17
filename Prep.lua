@@ -773,7 +773,7 @@ local function StatusMarker(isConfigured, passed, buy)
 end
 
 local function EvaluateSlotState(key)
-	local s = Prep.db[key]
+	local s = PrepDB[key]
 	if not s then
 		return { configured = false, passed = true, buy = false, countSuffix = "", durationSuffix = "", buttonSuffix = "" }
 	end
@@ -802,7 +802,7 @@ local function EvaluateSlotState(key)
 end
 
 local function SlotStatus(key, label)
-	local s = Prep.db[key]
+	local s = PrepDB[key]
 	if not s then return label .. ": |cffaaaaaa(not set)|r" end
 	local state = EvaluateSlotState(key)
 	local marker = StatusMarker(state.configured, state.passed, state.buy)
@@ -825,7 +825,7 @@ local function SlotStatus(key, label)
 end
 
 local function ShowStatus()
-	print("|cff00ccff[Prep]|r Current settings (Group: " .. tostring(Prep.db.group) .. " | Combat: " .. tostring(Prep.db.combat) .. "):")
+	print("|cff00ccff[Prep]|r Current settings (Group: " .. tostring(PrepDB.group) .. " | Combat: " .. tostring(PrepDB.combat) .. "):")
 	local missing = {}
 	for _, t in ipairs({
 		{ "slotBuff",  "Buff" }, { "slotFood", "Food" }, { "slotWeapon", "Weapon" },
@@ -910,7 +910,7 @@ SlashCmdList["PREP"] = function(msg)
 		if not id then
 			print("|cff00ccff[Prep]|r Item not found: |cffffff00" .. origArg .. "|r  (must be in bags)"); return
 		end
-		Prep.db[itemSlots[cmd]] = { itemID = id }
+		PrepDB[itemSlots[cmd]] = { itemID = id }
 		local link = select(2, GetItemInfo(id)) or ("|cffffff00" .. (C_Item.GetItemNameByID(id) or tostring(id)) .. "|r")
 		local label = (cmd or ""):sub(1, 1):upper() .. (cmd or ""):sub(2)
 		print("|cff00ccff[Prep]|r " .. label .. " set to: " .. ItemIcon(id) .. link)
@@ -923,9 +923,9 @@ SlashCmdList["PREP"] = function(msg)
 		if not r or not g or not b then
 			print("|cff00ccff[Prep]|r Usage: /prep warncolor <r> <g> <b> [a]"); return
 		end
-		Prep.db.warnR, Prep.db.warnG, Prep.db.warnB = r, g, b
+		PrepDB.warnR, PrepDB.warnG, PrepDB.warnB = r, g, b
 		if a then
-			Prep.db.warnA = a
+			PrepDB.warnA = a
 			print(("|cff00ccff[Prep]|r Warn color set to %.2f %.2f %.2f %.2f"):format(r, g, b, a))
 		else
 			print(("|cff00ccff[Prep]|r Warn color set to %.2f %.2f %.2f"):format(r, g, b))
@@ -939,9 +939,9 @@ SlashCmdList["PREP"] = function(msg)
 		if not r or not g or not b then
 			print("|cff00ccff[Prep]|r Usage: /prep color <r> <g> <b> [a]"); return
 		end
-		Prep.db.flashR, Prep.db.flashG, Prep.db.flashB = r, g, b
+		PrepDB.flashR, PrepDB.flashG, PrepDB.flashB = r, g, b
 		if a then
-			Prep.db.flashA = a
+			PrepDB.flashA = a
 			print(("|cff00ccff[Prep]|r Color set to %.2f %.2f %.2f %.2f"):format(r, g, b, a))
 		else
 			print(("|cff00ccff[Prep]|r Color set to %.2f %.2f %.2f"):format(r, g, b))
@@ -955,7 +955,7 @@ SlashCmdList["PREP"] = function(msg)
 		if not id then
 			print("|cff00ccff[Prep]|r Spell not found: |cffffff00" .. origArg .. "|r"); return
 		end
-		Prep.db.slotBuff = { spellID = id }
+		PrepDB.slotBuff = { spellID = id }
 		local link = C_Spell.GetSpellLink(id) or ("|cffffff00" .. (C_Spell.GetSpellName(id) or tostring(id)) .. "|r")
 		print("|cff00ccff[Prep]|r Buff set to: " .. SpellIcon(id) .. link)
 		Prep:ScheduleUpdate()
@@ -967,14 +967,14 @@ SlashCmdList["PREP"] = function(msg)
 		if not guid then
 			print("|cff00ccff[Prep]|r Pet not found: |cffffff00" .. origArg .. "|r"); return
 		end
-		Prep.db.slotPet = { petGUID = guid, petName = origArg }
+		PrepDB.slotPet = { petGUID = guid, petName = origArg }
 		local petLink = C_PetJournal.GetBattlePetLink(guid) or ("|cffffff00" .. name .. "|r")
 		print("|cff00ccff[Prep]|r Pet set to: " .. PetIcon(guid) .. petLink)
 		Prep:ScheduleUpdate()
 	elseif cmd == "clear" then
 		local k = "slot" .. arg:sub(1, 1):upper() .. arg:sub(2)
-		if Prep.db[k] ~= nil then
-			Prep.db[k] = nil
+		if PrepDB[k] ~= nil then
+			PrepDB[k] = nil
 			print("|cff00ccff[Prep]|r Cleared: " .. arg)
 			Prep:ScheduleUpdate()
 		else
@@ -989,14 +989,14 @@ SlashCmdList["PREP"] = function(msg)
 		end)
 		print("|cff00ccff[Prep]|r All settings reset to defaults")
 	elseif cmd == "group" then
-		Prep.db.group = not Prep.db.group
-		print("|cff00ccff[Prep]|r Group buff check: " .. (Prep.db.group and "|cff00ff00ON|r" or "|cffff4444OFF|r"))
+		PrepDB.group = not PrepDB.group
+		print("|cff00ccff[Prep]|r Group buff check: " .. (PrepDB.group and "|cff00ff00ON|r" or "|cffff4444OFF|r"))
 		Prep:ScheduleUpdate()
 	elseif cmd == "status" then
 		ShowStatus()
 	elseif cmd == "combat" then
-		Prep.db.combat = not Prep.db.combat
-		local state = Prep.db.combat and "|cff00ff00Enabled|r" or "|cffff4444Disabled|r"
+		PrepDB.combat = not PrepDB.combat
+		local state = PrepDB.combat and "|cff00ff00Enabled|r" or "|cffff4444Disabled|r"
 		print("|cff00ccff[Prep]|r Combat: " .. state)
 		Prep:ScheduleUpdate()
 	else

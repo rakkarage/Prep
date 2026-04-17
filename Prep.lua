@@ -47,7 +47,14 @@ function Prep:IsRestrictedMode()
 	return false
 end
 
--- ── Slot → button frame ───────────────────────────────────────────────────────
+
+local function GetMacroSpellID(macroID)
+	local spellID = GetMacroSpell(macroID)
+	if spellID and spellID > 0 then
+		return spellID
+	end
+	return nil
+end
 
 local BAR_RANGES = {
 	{ 1,   12,  "ActionButton",              0 },
@@ -82,11 +89,9 @@ function Prep:FindButtonForType(matchType, matchID)
 		if t then
 			local found = false
 
-			-- 1. Direct Match (Spell/Item dragged to bar)
 			if t == matchType and id == matchID then
 				found = true
 
-				-- 2. Macro Match (The Issue #495 Workaround)
 			elseif t == "macro" then
 				-- Step A: Get the name written on the button (The "Label")
 				local label = GetActionText(s)
@@ -100,11 +105,15 @@ function Prep:FindButtonForType(matchType, matchID)
 					end
 				end
 
-				-- Step C: Fallback to standard API if Label search failed
 				if not found then
-					local _, link = GetMacroItem(id)
-					local apiID = link and tonumber(link:match("item:(%d+)"))
-					if apiID == matchID then found = true end
+					if matchType == "spell" then
+						local macroSpellID = GetMacroSpellID(id)
+						if macroSpellID == matchID then found = true end
+					elseif matchType == "item" then
+						local _, link = GetMacroItem(id)
+						local apiID = link and tonumber(link:match("item:(%d+)"))
+						if apiID == matchID then found = true end
+					end
 				end
 			end
 
@@ -368,8 +377,7 @@ function Prep:FindCombatPetButton()
 	if not self.autoCombatPetSpellIDs or #self.autoCombatPetSpellIDs == 0 then return nil end
 	for s = 1, 180 do
 		local t, id = GetActionInfo(s)
-		local spellID = (t == "spell") and id or (t == "macro" and GetMacroSpell(id))
-
+		local spellID = (t == "spell" and id) or (t == "macro" and GetMacroSpellID(id)) or nil
 		if spellID then
 			for _, sid in ipairs(self.autoCombatPetSpellIDs) do
 				if spellID == sid then

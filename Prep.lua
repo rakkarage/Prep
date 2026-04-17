@@ -37,7 +37,7 @@ function Prep:IsRestrictedMode()
 	if self.isMatchActive or
 		(C_PvP.GetActiveMatchState() == Enum.PvPMatchState.Engaged) or
 		(EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive()) or
-		(InCombatLockdown() and not self.db.combat) or
+		(InCombatLockdown() and not PrepDB.combat) or
 		UnitIsDeadOrGhost("player") or
 		UnitOnTaxi("player")
 	then
@@ -181,8 +181,8 @@ function Prep:HasAura(name, group)
 end
 
 function Prep:HasFlask()
-	if not self.db.slotFlask or not self.db.slotFlask.itemID then return true end
-	local name = C_Item.GetItemNameByID(self.db.slotFlask.itemID)
+	if not PrepDB.slotFlask or not PrepDB.slotFlask.itemID then return true end
+	local name = C_Item.GetItemNameByID(PrepDB.slotFlask.itemID)
 	if not name then return false end
 	return AuraUtil.FindAuraByName(name, "player", "HELPFUL") ~= nil
 end
@@ -245,22 +245,22 @@ local function GetRequiredWeaponEnchantRemainSeconds()
 end
 
 function Prep:HasRune()
-	if not self.db.slotRune or not self.db.slotRune.itemID then return true end
-	return FindRuneAuraByItemID(self.db.slotRune.itemID) ~= nil
+	if not PrepDB.slotRune or not PrepDB.slotRune.itemID then return true end
+	return FindRuneAuraByItemID(PrepDB.slotRune.itemID) ~= nil
 end
 
 -- Each check function returns TRUE if the condition is MET (good), FALSE if MISSING (bad → glow).
--- Only checks that are configured in the DB (e.g., self.db.slotFlask is set) will be evaluated.
+-- Only checks that are configured in the DB (e.g., PrepDB.slotFlask is set) will be evaluated.
 local checks = {
 	{
 		key = "slotBuff",
 		fn = function()
 			-- Check if player has the configured buff active.
 			-- Return true if buff exists OR if no buff is configured.
-			if not Prep.db.slotBuff or not Prep.db.slotBuff.spellID then return true end
-			local name = C_Spell.GetSpellName(Prep.db.slotBuff.spellID)
+			if not PrepDB.slotBuff or not PrepDB.slotBuff.spellID then return true end
+			local name = C_Spell.GetSpellName(PrepDB.slotBuff.spellID)
 			if not name then return true end -- Spell doesn't exist, don't glow
-			return Prep:HasAura(name, Prep.db.group)
+			return Prep:HasAura(name, PrepDB.group)
 		end
 	},
 	{
@@ -281,10 +281,10 @@ local checks = {
 	{
 		key = "slotPet",
 		fn = function()
-			if not Prep.db.slotPet then return true end
-			if not Prep.db.slotPet.petGUID then return false end
+			if not PrepDB.slotPet then return true end
+			if not PrepDB.slotPet.petGUID then return false end
 			local g = C_PetJournal.GetSummonedPetGUID()
-			return g ~= nil and g ~= "" and g == Prep.db.slotPet.petGUID
+			return g ~= nil and g ~= "" and g == PrepDB.slotPet.petGUID
 		end
 	},
 }
@@ -392,15 +392,15 @@ function Prep:SetGlow(btn, show, r, g, b, a, isWarn)
 	if not btn then return end
 	local cr, cg, cb, ca
 	if isWarn then
-		cr = r or self.db.warnR
-		cg = g or self.db.warnG
-		cb = b or self.db.warnB
-		ca = a or self.db.warnA or 1.0
+		cr = r or PrepDB.warnR
+		cg = g or PrepDB.warnG
+		cb = b or PrepDB.warnB
+		ca = a or PrepDB.warnA or 1.0
 	else
-		cr = r or self.db.flashR
-		cg = g or self.db.flashG
-		cb = b or self.db.flashB
-		ca = a or self.db.flashA or 1.0
+		cr = r or PrepDB.flashR
+		cg = g or PrepDB.flashG
+		cb = b or PrepDB.flashB
+		ca = a or PrepDB.flashA or 1.0
 	end
 	for _, k in ipairs({ "SpellHighlightTexture", "Flash" }) do
 		local t = btn[k]
@@ -438,8 +438,8 @@ function Prep:ScheduleUpdate()
 		self:ClearGlows()
 		-- Iterate checks and glow buttons for missing OR expiring-soon slots.
 		for _, c in ipairs(checks) do
-			if self.db[c.key] then
-				local slotSetting = self.db[c.key]
+			if PrepDB[c.key] then
+				local slotSetting = PrepDB[c.key]
 				local btn = self:FindButton(slotSetting)
 				if btn then
 					local passed = c.fn()
@@ -447,7 +447,7 @@ function Prep:ScheduleUpdate()
 						self:SetGlow(btn, true)
 						self.activeGlows[c.key] = btn
 					elseif IsExpiringSoon(c.key, slotSetting) then
-						self:SetGlow(btn, true, self.db.warnR, self.db.warnG, self.db.warnB, self.db.warnA, true)
+						self:SetGlow(btn, true, PrepDB.warnR, PrepDB.warnG, PrepDB.warnB, PrepDB.warnA, true)
 						self.activeGlows[c.key] = btn
 					end
 				end
@@ -502,12 +502,12 @@ function Prep:RefreshPetGUID()
 	-- Pet GUIDs become stale when you re-log, switch specs, or change pet.
 	-- This function re-resolves the pet by NAME against the current journal to get a fresh GUID.
 	-- Useful after talent swaps or when the stored GUID no longer exists.
-	if not self.db.slotPet then return true end
-	local lookupName = self.db.slotPet.petName
+	if not PrepDB.slotPet then return true end
+	local lookupName = PrepDB.slotPet.petName
 	if not lookupName then
 		-- If no name stored, try to extract it from the old GUID (if it still exists in journal).
-		if self.db.slotPet.petGUID then
-			local _, cn, _, _, _, _, _, sn = C_PetJournal.GetPetInfoByPetID(self.db.slotPet.petGUID)
+		if PrepDB.slotPet.petGUID then
+			local _, cn, _, _, _, _, _, sn = C_PetJournal.GetPetInfoByPetID(PrepDB.slotPet.petGUID)
 			lookupName = (cn and cn ~= "") and cn or sn
 		end
 		if not lookupName then
@@ -519,7 +519,7 @@ function Prep:RefreshPetGUID()
 	-- Fuzzy-match the name in the current journal to find the fresh GUID.
 	local freshGUID = self:FindPetGUIDByName(lookupName)
 	if freshGUID then
-		self.db.slotPet.petGUID = freshGUID
+		PrepDB.slotPet.petGUID = freshGUID
 		return true
 	end
 	return false
@@ -527,7 +527,7 @@ end
 
 function Prep:AttemptPetRefresh()
 	if not self.needsPetRefresh then return end
-	if not self.db.slotPet then
+	if not PrepDB.slotPet then
 		self.needsPetRefresh = false
 		self.petRefreshAttempts = 0
 		return
@@ -541,8 +541,8 @@ function Prep:AttemptPetRefresh()
 	end
 
 	if self.petRefreshAttempts >= (self.petRefreshMaxAttempts or 12) then
-		local failedName = self.db.slotPet.petName or "(unknown)"
-		self.db.slotPet = nil
+		local failedName = PrepDB.slotPet.petName or "(unknown)"
+		PrepDB.slotPet = nil
 		self.needsPetRefresh = false
 		self.petRefreshAttempts = 0
 		print("|cff00ccff[Prep]|r Pet '" .. failedName .. "' no longer found after journal sync, cleared.")
@@ -572,10 +572,9 @@ Prep:SetScript("OnEvent", function(self, event, ...)
 		if name ~= self.name then return end
 
 		PrepDB = PrepDB or {}
-		self.db = PrepDB
 		for k, v in pairs(self.defaults) do
-			if self.db[k] == nil then
-				self.db[k] = v
+			if PrepDB[k] == nil then
+				PrepDB[k] = v
 			end
 		end
 
@@ -620,7 +619,7 @@ Prep:SetScript("OnEvent", function(self, event, ...)
 		-- Force a re-check of the restricted mode
 		self:ScheduleUpdate()
 	elseif event == "PLAYER_REGEN_DISABLED" then
-		if not self.db.combat then
+		if not PrepDB.combat then
 			self:ClearGlows()
 		else
 			self:ScheduleUpdate()
@@ -638,7 +637,7 @@ Prep:SetScript("OnEvent", function(self, event, ...)
 		local unit = ...
 		if unit == "player" then
 			self:ScheduleUpdate()
-		elseif self.db.group and (unit:find("party") or unit:find("raid")) then
+		elseif PrepDB.group and (unit:find("party") or unit:find("raid")) then
 			self:ScheduleUpdateSlow()
 		end
 	elseif event == "ACTIVE_TALENT_GROUP_CHANGED" then
@@ -652,7 +651,7 @@ Prep:SetScript("OnEvent", function(self, event, ...)
 			else
 				self:ScheduleUpdate()
 			end
-		elseif self.db.group and (unit:find("party") or unit:find("raid")) then
+		elseif PrepDB.group and (unit:find("party") or unit:find("raid")) then
 			self:ScheduleUpdateSlow()
 		end
 	elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then

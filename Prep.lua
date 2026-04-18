@@ -32,10 +32,25 @@ local needsPetRefresh = false
 local petRefreshAttempts = 0
 local petRefreshMaxAttempts = 12
 
+-- ── Slot cache: raw action data ───────────────────────────────────────────────
+-- slotCache[s] = { type=t, id=id } for s in 1..180
+-- Only rebuilt on structural bar changes (login, page flip, talent swap).
+-- ACTIONBAR_SLOT_CHANGED updates individual entries and bails early if unchanged.
+local slotCache = {}
+local slotCacheDirty = true
+
+-- ── Button cache: resolved frame references ───────────────────────────────────
+-- buttonCache["slotBuff"] = frame (or false if not found)
+-- Rebuilt lazily on next ScheduleUpdate tick after any bar change.
+-- Avoids re-scanning 180 slots × N configured slots on every update.
+local buttonCache = {}
+local buttonCacheDirty = true
+
 local itemSlots = { food = "slotFood", weapon = "slotWeapon", flask = "slotFlask", rune = "slotRune" }
 
-local ICON_SIZE = 16
 local EXPIRING_WARNING_THRESHOLD = 180
+local NUM_BUTTONS = 180
+local ICON_SIZE = 16
 local ALL_CMDS = {
 	"buff", "food", "weapon", "flask", "rune", "pet", "clear", "reset", "group", "combat", "alpha", "color", "warncolor", "status",
 }
@@ -57,6 +72,23 @@ local COMBAT_PET_SPELLS = {
 		"Summon Demonic Tyrant", "Summon Infernal", "Summon Sayaad" },
 	DEATHKNIGHT = { "Raise Dead" },
 }
+
+-- ── Slot cache ────────────────────────────────────────────────────────────────
+
+local function RebuildSlotCache()
+	wipe(slotCache)
+	for s = 1, NUM_BUTTONS do
+		local t, id = GetActionInfo(s)
+		if t then slotCache[s] = { type = t, id = id } end
+	end
+	slotCacheDirty = false
+end
+
+local function GetCachedActionInfo(s)
+	if slotCacheDirty then RebuildSlotCache() end
+	local e = slotCache[s]
+	return e and e.type, e and e.id
+end
 
 local function IsRestrictedMode()
 	if isMatchActive or
@@ -94,27 +126,21 @@ local function FindButtonForType(matchType, matchID)
 	local matchName = (matchType == "spell") and C_Spell.GetSpellName(matchID) or C_Item.GetItemNameByID(matchID)
 	if not matchName then return end
 
-	for s = 1, 180 do
-		local t, id = GetActionInfo(s)
-
+	for s = 1, NUM_BUTTONS do
+		local t, id = GetCachedActionInfo(s)
 		if t then
 			local found = false
 
 			if t == matchType and id == matchID then
 				found = true
 			elseif t == "macro" then
-				-- Step A: Get the name written on the button (The "Label")
 				local label = GetActionText(s)
-
 				if label then
-					-- Step B: Ask the game for the macro body using the NAME, not the ID
 					local _, _, body = GetMacroInfo(label)
-
 					if body and body:lower():find(matchName:lower(), 1, true) then
 						found = true
 					end
 				end
-
 				if not found then
 					if matchType == "spell" then
 						local macroSpellID = GetMacroSpellID(id)
@@ -138,8 +164,8 @@ end
 local function FindButton(slot)
 	if not slot then return nil end
 	if slot.petGUID then
-		for s = 1, 180 do
-			local t, id = GetActionInfo(s)
+		for s = 1, NUM_BUTTONS do
+			local t, id = GetCachedActionInfo(s)
 			if t == "summonpet" and id == slot.petGUID then
 				local btn = GetButtonForActionSlot(s)
 				if btn then return btn end
@@ -153,8 +179,10 @@ local function FindButton(slot)
 	end
 end
 
--- ── Buff / aura checks ────────────────────────────────────────────────────────
+-- ── Button cache ──────────────────────────────────────────────────────────────
 
+
+-- Move checks and FindCombatPetButton here so no forward declaration is needed
 local function ShouldCheckGroupUnit(unit)
 	if not UnitExists(unit) or not UnitIsConnected(unit) or UnitIsDeadOrGhost(unit) then
 		return false
@@ -183,23 +211,6 @@ local function AllGroupMembersHaveAura(hasAura)
 	return true
 end
 
-local function HasAura(name, group)
-	if not AuraUtil.FindAuraByName(name, "player", "HELPFUL") then return false end
-	if group then
-		return AllGroupMembersHaveAura(function(unit)
-			return AuraUtil.FindAuraByName(name, unit, "HELPFUL") ~= nil
-		end)
-	end
-	return true
-end
-
-local function HasFlask()
-	if not PrepDB.slotFlask or not PrepDB.slotFlask.itemID then return true end
-	local name = C_Item.GetItemNameByID(PrepDB.slotFlask.itemID)
-	if not name then return false end
-	return AuraUtil.FindAuraByName(name, "player", "HELPFUL") ~= nil
-end
-
 local function FindPlayerHelpfulAura(matchFn)
 	local i = 1
 	while true do
@@ -226,6 +237,28 @@ local function FindRuneAuraByItemID(itemID)
 	return FindPlayerHelpfulAura(function(aura)
 		return aura.name and not issecretvalue(aura.name) and aura.name:lower():find(searchTerm, 1, true)
 	end)
+end
+
+local function HasRune()
+	if not PrepDB.slotRune or not PrepDB.slotRune.itemID then return true end
+	return FindRuneAuraByItemID(PrepDB.slotRune.itemID) ~= nil
+end
+
+local function HasAura(name, group)
+	if not AuraUtil.FindAuraByName(name, "player", "HELPFUL") then return false end
+	if group then
+		return AllGroupMembersHaveAura(function(unit)
+			return AuraUtil.FindAuraByName(name, unit, "HELPFUL") ~= nil
+		end)
+	end
+	return true
+end
+
+local function HasFlask()
+	if not PrepDB.slotFlask or not PrepDB.slotFlask.itemID then return true end
+	local name = C_Item.GetItemNameByID(PrepDB.slotFlask.itemID)
+	if not name then return false end
+	return AuraUtil.FindAuraByName(name, "player", "HELPFUL") ~= nil
 end
 
 local function IsWeaponInOffhand()
@@ -257,22 +290,15 @@ local function GetRequiredWeaponEnchantRemainSeconds()
 	return minRemain
 end
 
-local function HasRune()
-	if not PrepDB.slotRune or not PrepDB.slotRune.itemID then return true end
-	return FindRuneAuraByItemID(PrepDB.slotRune.itemID) ~= nil
-end
-
 -- Each check function returns TRUE if the condition is MET (good), FALSE if MISSING (bad → glow).
 -- Only checks that are configured in the DB (e.g., PrepDB.slotFlask is set) will be evaluated.
 local checks = {
 	{
 		key = "slotBuff",
 		fn = function()
-			-- Check if player has the configured buff active.
-			-- Return true if buff exists OR if no buff is configured.
 			if not PrepDB.slotBuff or not PrepDB.slotBuff.spellID then return true end
 			local name = C_Spell.GetSpellName(PrepDB.slotBuff.spellID)
-			if not name then return true end -- Spell doesn't exist, don't glow
+			if not name then return true end
 			return HasAura(name, PrepDB.group)
 		end
 	},
@@ -301,6 +327,41 @@ local checks = {
 		end
 	},
 }
+
+local function FindCombatPetButton()
+	if not autoCombatPetSpellIDs or #autoCombatPetSpellIDs == 0 then return nil end
+	for s = 1, NUM_BUTTONS do
+		local t, id = GetCachedActionInfo(s)
+		local spellID = (t == "spell" and id) or (t == "macro" and GetMacroSpellID(id)) or nil
+		if spellID then
+			for _, sid in ipairs(autoCombatPetSpellIDs) do
+				if spellID == sid then
+					local btn = GetButtonForActionSlot(s)
+					if btn then return btn end
+				end
+			end
+		end
+	end
+end
+
+local function RebuildButtonCache()
+	wipe(buttonCache)
+	for _, c in ipairs(checks) do
+		if PrepDB[c.key] then
+			buttonCache[c.key] = FindButton(PrepDB[c.key]) or false
+		end
+	end
+	if autoCombatPetSpellIDs then
+		buttonCache["__combatPet"] = FindCombatPetButton() or false
+	end
+	buttonCacheDirty = false
+end
+
+local function GetCachedButton(key)
+	if buttonCacheDirty then RebuildButtonCache() end
+	local b = buttonCache[key]
+	return b ~= false and b or nil
+end
 
 local function FindPlayerHelpfulAuraByName(name)
 	if not name or name == "" then return nil end
@@ -371,22 +432,6 @@ local function InitAutoCombatPet()
 	end
 end
 
-local function FindCombatPetButton()
-	if not autoCombatPetSpellIDs or #autoCombatPetSpellIDs == 0 then return nil end
-	for s = 1, 180 do
-		local t, id = GetActionInfo(s)
-		local spellID = (t == "spell" and id) or (t == "macro" and GetMacroSpellID(id)) or nil
-		if spellID then
-			for _, sid in ipairs(autoCombatPetSpellIDs) do
-				if spellID == sid then
-					local btn = GetButtonForActionSlot(s)
-					if btn then return btn end
-				end
-			end
-		end
-	end
-end
-
 -- ── Glow ──────────────────────────────────────────────────────────────────────
 
 local function SetGlow(btn, show, r, g, b, a, isWarn)
@@ -423,8 +468,6 @@ local function ClearGlows()
 end
 
 local function ScheduleUpdate()
-	-- Fast update (0.1s cadence) triggered by combat/aura/bar changes.
-	-- Only checks slots that are configured in the DB to avoid wasting CPU iterating all 180 bars.
 	if IsRestrictedMode() then
 		ClearGlows(); return
 	end
@@ -437,11 +480,10 @@ local function ScheduleUpdate()
 			return
 		end
 		ClearGlows()
-		-- Iterate checks and glow buttons for missing OR expiring-soon slots.
 		for _, c in ipairs(checks) do
 			if PrepDB[c.key] then
 				local slotSetting = PrepDB[c.key]
-				local btn = FindButton(slotSetting)
+				local btn = GetCachedButton(c.key)
 				if btn then
 					local passed = c.fn()
 					if not passed then
@@ -454,9 +496,8 @@ local function ScheduleUpdate()
 				end
 			end
 		end
-		-- Auto-summon pet: if class has combat pet summons and no pet is out, glow the summon button.
 		if autoCombatPetSpellIDs and not UnitExists("pet") then
-			local btn = FindCombatPetButton()
+			local btn = GetCachedButton("__combatPet")
 			if btn then
 				SetGlow(btn, true)
 				activeGlows["__combatPet"] = btn
@@ -465,8 +506,7 @@ local function ScheduleUpdate()
 	end)
 end
 
-local function ScheduleUpdateSlow() -- Slower update (0.5s cadence) for less urgent checks like group member aura changes.
-	-- Defers to the fast update if one is already pending to avoid doubling up work.
+local function ScheduleUpdateSlow()
 	if IsRestrictedMode() then
 		ClearGlows(); return
 	end
@@ -500,24 +540,18 @@ local function FindPetGUIDByName(search)
 end
 
 local function RefreshPetGUID()
-	-- Pet GUIDs become stale when you re-log, switch specs, or change pet.
-	-- This function re-resolves the pet by NAME against the current journal to get a fresh GUID.
-	-- Useful after talent swaps or when the stored GUID no longer exists.
 	if not PrepDB.slotPet then return true end
 	local lookupName = PrepDB.slotPet.petName
 	if not lookupName then
-		-- If no name stored, try to extract it from the old GUID (if it still exists in journal).
 		if PrepDB.slotPet.petGUID then
 			local _, cn, _, _, _, _, _, sn = C_PetJournal.GetPetInfoByPetID(PrepDB.slotPet.petGUID)
 			lookupName = (cn and cn ~= "") and cn or sn
 		end
 		if not lookupName then
-			-- Journal data may not be fully available yet; let retry logic handle this.
 			return false
 		end
 	end
 
-	-- Fuzzy-match the name in the current journal to find the fresh GUID.
 	local freshGUID = FindPetGUIDByName(lookupName)
 	if freshGUID then
 		PrepDB.slotPet.petGUID = freshGUID
@@ -550,12 +584,24 @@ local function AttemptPetRefresh()
 		return
 	end
 
-	-- Retry with a short delay while the pet journal continues to populate after login.
 	C_Timer.After(0.5, function()
 		if needsPetRefresh then
 			AttemptPetRefresh()
 		end
 	end)
+end
+
+local function HookAllButtons()
+	for _, r in ipairs(BAR_RANGES) do
+		for s = r[1], r[2] do
+			local btn = _G[r[3] .. (s + r[4])]
+			if btn and not btn.__prepHooked then
+				btn.__prepHooked = true
+				btn:HookScript("OnEnter", ScheduleUpdate)
+				btn:HookScript("OnLeave", ScheduleUpdate)
+			end
+		end
+	end
 end
 
 frame:RegisterEvent("ADDON_LOADED")
@@ -582,6 +628,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
 		needsPetRefresh = true
 		petRefreshAttempts = 0
 		InitAutoCombatPet()
+		HookAllButtons()
 		for _, e in ipairs({
 			"EDIT_MODE_LAYOUTS_UPDATED",
 			"ACTIVE_TALENT_GROUP_CHANGED",
@@ -598,6 +645,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
 		}) do self:RegisterEvent(e) end
 		self:UnregisterEvent(event)
 	elseif event == "PLAYER_ENTERING_WORLD" then
+		slotCacheDirty = true
+		buttonCacheDirty = true
 		isMatchActive = false
 		if needsPetRefresh then
 			C_Timer.After(1.0, function()
@@ -607,17 +656,41 @@ frame:SetScript("OnEvent", function(self, event, ...)
 			end)
 		end
 		ScheduleUpdate()
+	elseif event == "ACTIONBAR_SLOT_CHANGED" then
+		local slot = ...
+		if slot == 0 then
+			slotCacheDirty = true
+			buttonCacheDirty = true
+			ScheduleUpdate()
+			return
+		end
+		local t, id = GetActionInfo(slot)
+		local old = slotCache[slot]
+		local hadAction = old ~= nil
+		local hasAction = t ~= nil
+		local actionChanged = hadAction and hasAction and (old.type ~= t or old.id ~= id)
+		local changed = (hadAction ~= hasAction) or actionChanged
+		if not changed then return end
+		if t then
+			slotCache[slot] = { type = t, id = id }
+		else
+			slotCache[slot] = nil
+		end
+		buttonCacheDirty = true
+		ScheduleUpdate()
+	elseif event == "ACTIONBAR_PAGE_CHANGED" then
+		slotCacheDirty = true
+		buttonCacheDirty = true
+		ScheduleUpdate()
 	elseif event == "CHALLENGE_MODE_START" then
 		isMatchActive = true
 		ClearGlows()
 	elseif event == "PVP_MATCH_ACTIVE" then
-		-- Arena/BG activation happens during Preparation; keep updates allowed until Engaged state.
 		ScheduleUpdate()
 	elseif event == "CHALLENGE_MODE_COMPLETED" or event == "CHALLENGE_MODE_RESET" or event == "PVP_MATCH_COMPLETE" then
 		isMatchActive = false
 		ScheduleUpdate()
 	elseif event == "PVP_MATCH_STATE_CHANGED" or event == "ZONE_CHANGED_NEW_AREA" then
-		-- Force a re-check of the restricted mode
 		ScheduleUpdate()
 	elseif event == "PLAYER_REGEN_DISABLED" then
 		if not PrepDB.combat then
@@ -633,6 +706,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
 		if needsPetRefresh then
 			AttemptPetRefresh()
 		end
+		buttonCacheDirty = true
 		ScheduleUpdate()
 	elseif event == "UNIT_AURA" then
 		local unit = ...
@@ -642,7 +716,10 @@ frame:SetScript("OnEvent", function(self, event, ...)
 			ScheduleUpdateSlow()
 		end
 	elseif event == "ACTIVE_TALENT_GROUP_CHANGED" then
+		slotCacheDirty = true
+		buttonCacheDirty = true
 		InitAutoCombatPet()
+		HookAllButtons()
 		ScheduleUpdate()
 	elseif event == "UNIT_FLAGS" then
 		local unit = ...
@@ -656,6 +733,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
 			ScheduleUpdateSlow()
 		end
 	elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then
+		buttonCacheDirty = true
+		HookAllButtons()
 		ScheduleUpdate()
 	else
 		ScheduleUpdate()
@@ -663,8 +742,6 @@ frame:SetScript("OnEvent", function(self, event, ...)
 end)
 
 local function FindSpellIDByName(search)
-	-- Search the player's spellbook for a spell by name.
-	-- Returns the spell ID if found, or nil if not found (spell not learned or typo).
 	search = search:lower()
 	for i = 1, 1000 do
 		local info = C_SpellBook.GetSpellBookItemInfo(i, Enum.SpellBookSpellBank.Player)
@@ -674,18 +751,14 @@ local function FindSpellIDByName(search)
 			if name and name:lower() == search then return info.spellID end
 		end
 	end
-	-- Fallback: try the newer spell identifier API.
 	if C_Spell.GetSpellIDForSpellIdentifier then
 		local id = C_Spell.GetSpellIDForSpellIdentifier(search)
 		if id and id > 0 then return id end
 	end
-	-- Not found.
 	return nil
 end
 
 local function FindItemIDByName(search)
-	-- Search the player's inventory for an item by name.
-	-- Returns the item ID if found, or nil if not in bags (not looted or wrong name).
 	search = search:lower()
 	for bag = 0, NUM_BAG_SLOTS do
 		for slot = 1, C_Container.GetContainerNumSlots(bag) do
@@ -696,7 +769,6 @@ local function FindItemIDByName(search)
 			end
 		end
 	end
-	-- Not found.
 	return nil
 end
 
@@ -906,6 +978,7 @@ SlashCmdList["PREP"] = function(msg)
 		local link = select(2, GetItemInfo(id)) or ("|cffffff00" .. (C_Item.GetItemNameByID(id) or tostring(id)) .. "|r")
 		local label = (cmd or ""):sub(1, 1):upper() .. (cmd or ""):sub(2)
 		print("|cff00ccff[Prep]|r " .. label .. " set to: " .. ItemIcon(id) .. link)
+		buttonCacheDirty = true
 		ScheduleUpdate()
 	elseif cmd == "warncolor" then
 		origArg = origArg:gsub(",", " ")
@@ -950,6 +1023,7 @@ SlashCmdList["PREP"] = function(msg)
 		PrepDB.slotBuff = { spellID = id }
 		local link = C_Spell.GetSpellLink(id) or ("|cffffff00" .. (C_Spell.GetSpellName(id) or tostring(id)) .. "|r")
 		print("|cff00ccff[Prep]|r Buff set to: " .. SpellIcon(id) .. link)
+		buttonCacheDirty = true
 		ScheduleUpdate()
 	elseif cmd == "pet" then
 		if origArg == "" then
@@ -962,12 +1036,14 @@ SlashCmdList["PREP"] = function(msg)
 		PrepDB.slotPet = { petGUID = guid, petName = origArg }
 		local petLink = C_PetJournal.GetBattlePetLink(guid) or ("|cffffff00" .. name .. "|r")
 		print("|cff00ccff[Prep]|r Pet set to: " .. PetIcon(guid) .. petLink)
+		buttonCacheDirty = true
 		ScheduleUpdate()
 	elseif cmd == "clear" then
 		local k = "slot" .. arg:sub(1, 1):upper() .. arg:sub(2)
 		if PrepDB[k] ~= nil then
 			PrepDB[k] = nil
 			print("|cff00ccff[Prep]|r Cleared: " .. arg)
+			buttonCacheDirty = true
 			ScheduleUpdate()
 		else
 			print("|cff00ccff[Prep]|r Unknown slot: " .. arg .. "  (buff/food/weapon/flask/rune/pet)")
@@ -976,6 +1052,8 @@ SlashCmdList["PREP"] = function(msg)
 		ClearGlows()
 		wipe(PrepDB)
 		for k, v in pairs(defaults) do PrepDB[k] = v end
+		slotCacheDirty = true
+		buttonCacheDirty = true
 		C_Timer.After(0.2, function()
 			ScheduleUpdate(); ShowStatus()
 		end)

@@ -1,10 +1,10 @@
 -- ✨️ Prep: Highlights missing configured actions on action bars.
 
-local addonName = ...
+local _addonName = ...
 
-local frame = CreateFrame("Frame")
+local _frame = CreateFrame("Frame")
 
-local defaults = {
+local _defaults = {
 	group = true,
 	combat = false,
 	flashR = 1.0,
@@ -23,30 +23,30 @@ local defaults = {
 	slotPet = nil,
 }
 
-local isMatchActive = false
-local activeGlows = {}
-local pendingUpdate = false
-local pendingUpdateSlow = false
-local autoCombatPetSpellIDs = nil
-local needsPetRefresh = false
-local petRefreshAttempts = 0
-local petRefreshMaxAttempts = 12
+local _isMatchActive = false
+local _activeGlows = {}
+local _pendingUpdate = false
+local _pendingUpdateSlow = false
+local _autoCombatPetSpellIDs = nil
+local _needsPetRefresh = false
+local _petRefreshAttempts = 0
+local _petRefreshMaxAttempts = 12
 
 -- ── Slot cache: raw action data ───────────────────────────────────────────────
 -- slotCache[s] = { type=t, id=id } for s in 1..180
 -- Only rebuilt on structural bar changes (login, page flip, talent swap).
 -- ACTIONBAR_SLOT_CHANGED updates individual entries and bails early if unchanged.
-local slotCache = {}
-local slotCacheDirty = true
+local _slotCache = {}
+local _slotCacheDirty = true
 
 -- ── Button cache: resolved frame references ───────────────────────────────────
 -- buttonCache["slotBuff"] = frame (or false if not found)
 -- Rebuilt lazily on next ScheduleUpdate tick after any bar change.
 -- Avoids re-scanning 180 slots × N configured slots on every update.
-local buttonCache = {}
-local buttonCacheDirty = true
+local _buttonCache = {}
+local _buttonCacheDirty = true
 
-local itemSlots = { food = "slotFood", weapon = "slotWeapon", flask = "slotFlask", rune = "slotRune" }
+local _itemSlots = { food = "slotFood", weapon = "slotWeapon", flask = "slotFlask", rune = "slotRune" }
 
 local EXPIRING_WARNING_THRESHOLD = 180
 local NUM_BUTTONS = 180
@@ -76,22 +76,22 @@ local COMBAT_PET_SPELLS = {
 -- ── Slot cache ────────────────────────────────────────────────────────────────
 
 local function RebuildSlotCache()
-	wipe(slotCache)
+	wipe(_slotCache)
 	for s = 1, NUM_BUTTONS do
 		local t, id = GetActionInfo(s)
-		if t then slotCache[s] = { type = t, id = id } end
+		if t then _slotCache[s] = { type = t, id = id } end
 	end
-	slotCacheDirty = false
+	_slotCacheDirty = false
 end
 
 local function GetCachedActionInfo(s)
-	if slotCacheDirty then RebuildSlotCache() end
-	local e = slotCache[s]
+	if _slotCacheDirty then RebuildSlotCache() end
+	local e = _slotCache[s]
 	return e and e.type, e and e.id
 end
 
 local function IsRestrictedMode()
-	if isMatchActive or
+	if _isMatchActive or
 		(C_PvP.GetActiveMatchState() == Enum.PvPMatchState.Engaged) or
 		(EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive()) or
 		(InCombatLockdown() and not PrepDB.combat) or
@@ -329,12 +329,12 @@ local checks = {
 }
 
 local function FindCombatPetButton()
-	if not autoCombatPetSpellIDs or #autoCombatPetSpellIDs == 0 then return nil end
+	if not _autoCombatPetSpellIDs or #_autoCombatPetSpellIDs == 0 then return nil end
 	for s = 1, NUM_BUTTONS do
 		local t, id = GetCachedActionInfo(s)
 		local spellID = (t == "spell" and id) or (t == "macro" and GetMacroSpellID(id))
 		if spellID then
-			for _, sid in ipairs(autoCombatPetSpellIDs) do
+			for _, sid in ipairs(_autoCombatPetSpellIDs) do
 				if spellID == sid then
 					local btn = GetButtonForActionSlot(s)
 					if btn then return btn end
@@ -345,21 +345,21 @@ local function FindCombatPetButton()
 end
 
 local function RebuildButtonCache()
-	wipe(buttonCache)
+	wipe(_buttonCache)
 	for _, c in ipairs(checks) do
 		if PrepDB[c.key] then
-			buttonCache[c.key] = FindButton(PrepDB[c.key]) or false
+			_buttonCache[c.key] = FindButton(PrepDB[c.key]) or false
 		end
 	end
-	if autoCombatPetSpellIDs then
-		buttonCache["__combatPet"] = FindCombatPetButton() or false
+	if _autoCombatPetSpellIDs then
+		_buttonCache["__combatPet"] = FindCombatPetButton() or false
 	end
-	buttonCacheDirty = false
+	_buttonCacheDirty = false
 end
 
 local function GetCachedButton(key)
-	if buttonCacheDirty then RebuildButtonCache() end
-	return buttonCache[key] ~= false and buttonCache[key] or nil
+	if _buttonCacheDirty then RebuildButtonCache() end
+	return _buttonCache[key] ~= false and _buttonCache[key] or nil
 end
 
 local function FindPlayerHelpfulAuraByName(name)
@@ -410,10 +410,10 @@ local function InitAutoCombatPet()
 	local class = UnitClassBase("player")
 	local spellNames = COMBAT_PET_SPELLS[class]
 	if not spellNames then
-		autoCombatPetSpellIDs = nil
+		_autoCombatPetSpellIDs = nil
 		return
 	end
-	autoCombatPetSpellIDs = {}
+	_autoCombatPetSpellIDs = {}
 	for _, name in ipairs(spellNames) do
 		local id = C_Spell.GetSpellIDForSpellIdentifier and C_Spell.GetSpellIDForSpellIdentifier(name)
 		if not id then
@@ -426,7 +426,7 @@ local function InitAutoCombatPet()
 			end
 		end
 		if id and id > 0 then
-			autoCombatPetSpellIDs[#autoCombatPetSpellIDs + 1] = id
+			_autoCombatPetSpellIDs[#_autoCombatPetSpellIDs + 1] = id
 		end
 	end
 end
@@ -462,18 +462,18 @@ end
 -- ── Main update ───────────────────────────────────────────────────────────────
 
 local function ClearGlows()
-	for _, btn in pairs(activeGlows) do SetGlow(btn, false) end
-	wipe(activeGlows)
+	for _, btn in pairs(_activeGlows) do SetGlow(btn, false) end
+	wipe(_activeGlows)
 end
 
 local function ScheduleUpdate()
 	if IsRestrictedMode() then
 		ClearGlows(); return
 	end
-	if pendingUpdate then return end
-	pendingUpdate = true
+	if _pendingUpdate then return end
+	_pendingUpdate = true
 	C_Timer.After(0.1, function()
-		pendingUpdate = false
+		_pendingUpdate = false
 		if IsRestrictedMode() then
 			ClearGlows()
 			return
@@ -487,19 +487,19 @@ local function ScheduleUpdate()
 					local passed = c.fn()
 					if not passed then
 						SetGlow(btn, true)
-						activeGlows[c.key] = btn
+						_activeGlows[c.key] = btn
 					elseif IsExpiringSoon(c.key, slotSetting) then
 						SetGlow(btn, true, PrepDB.warnR, PrepDB.warnG, PrepDB.warnB, PrepDB.warnA, true)
-						activeGlows[c.key] = btn
+						_activeGlows[c.key] = btn
 					end
 				end
 			end
 		end
-		if autoCombatPetSpellIDs and not UnitExists("pet") then
+		if _autoCombatPetSpellIDs and not UnitExists("pet") then
 			local btn = GetCachedButton("__combatPet")
 			if btn then
 				SetGlow(btn, true)
-				activeGlows["__combatPet"] = btn
+				_activeGlows["__combatPet"] = btn
 			end
 		end
 	end)
@@ -509,11 +509,11 @@ local function ScheduleUpdateSlow()
 	if IsRestrictedMode() then
 		ClearGlows(); return
 	end
-	if pendingUpdateSlow then return end
-	pendingUpdateSlow = true
+	if _pendingUpdateSlow then return end
+	_pendingUpdateSlow = true
 	C_Timer.After(0.5, function()
-		pendingUpdateSlow = false
-		if pendingUpdate then return end
+		_pendingUpdateSlow = false
+		if _pendingUpdate then return end
 		if IsRestrictedMode() then
 			ClearGlows(); return
 		end
@@ -560,31 +560,31 @@ local function RefreshPetGUID()
 end
 
 local function AttemptPetRefresh()
-	if not needsPetRefresh then return end
+	if not _needsPetRefresh then return end
 	if not PrepDB.slotPet then
-		needsPetRefresh = false
-		petRefreshAttempts = 0
+		_needsPetRefresh = false
+		_petRefreshAttempts = 0
 		return
 	end
 
-	petRefreshAttempts = (petRefreshAttempts or 0) + 1
+	_petRefreshAttempts = (_petRefreshAttempts or 0) + 1
 	if RefreshPetGUID() then
-		needsPetRefresh = false
-		petRefreshAttempts = 0
+		_needsPetRefresh = false
+		_petRefreshAttempts = 0
 		return
 	end
 
-	if petRefreshAttempts >= (petRefreshMaxAttempts or 12) then
+	if _petRefreshAttempts >= (_petRefreshMaxAttempts or 12) then
 		local failedName = PrepDB.slotPet.petName or "(unknown)"
 		PrepDB.slotPet = nil
-		needsPetRefresh = false
-		petRefreshAttempts = 0
+		_needsPetRefresh = false
+		_petRefreshAttempts = 0
 		print("|cff00ccff[Prep]|r Pet '" .. failedName .. "' no longer found after journal sync, cleared.")
 		return
 	end
 
 	C_Timer.After(0.5, function()
-		if needsPetRefresh then
+		if _needsPetRefresh then
 			AttemptPetRefresh()
 		end
 	end)
@@ -603,29 +603,29 @@ local function HookAllButtons()
 	end
 end
 
-frame:RegisterEvent("ADDON_LOADED")
-frame:RegisterEvent("PLAYER_ENTERING_WORLD")
-frame:RegisterEvent("CHALLENGE_MODE_START")
-frame:RegisterEvent("CHALLENGE_MODE_COMPLETED")
-frame:RegisterEvent("CHALLENGE_MODE_RESET")
-frame:RegisterEvent("PVP_MATCH_ACTIVE")
-frame:RegisterEvent("PVP_MATCH_COMPLETE")
-frame:RegisterEvent("PVP_MATCH_STATE_CHANGED")
-frame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-frame:SetScript("OnEvent", function(self, event, ...)
+_frame:RegisterEvent("ADDON_LOADED")
+_frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+_frame:RegisterEvent("CHALLENGE_MODE_START")
+_frame:RegisterEvent("CHALLENGE_MODE_COMPLETED")
+_frame:RegisterEvent("CHALLENGE_MODE_RESET")
+_frame:RegisterEvent("PVP_MATCH_ACTIVE")
+_frame:RegisterEvent("PVP_MATCH_COMPLETE")
+_frame:RegisterEvent("PVP_MATCH_STATE_CHANGED")
+_frame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+_frame:SetScript("OnEvent", function(self, event, ...)
 	if event == "ADDON_LOADED" then
 		local name = ...
-		if name ~= addonName then return end
+		if name ~= _addonName then return end
 
 		PrepDB = PrepDB or {}
-		for k, v in pairs(defaults) do
+		for k, v in pairs(_defaults) do
 			if PrepDB[k] == nil then
 				PrepDB[k] = v
 			end
 		end
 
-		needsPetRefresh = true
-		petRefreshAttempts = 0
+		_needsPetRefresh = true
+		_petRefreshAttempts = 0
 		InitAutoCombatPet()
 		HookAllButtons()
 		for _, e in ipairs({
@@ -644,12 +644,12 @@ frame:SetScript("OnEvent", function(self, event, ...)
 		}) do self:RegisterEvent(e) end
 		self:UnregisterEvent(event)
 	elseif event == "PLAYER_ENTERING_WORLD" then
-		slotCacheDirty = true
-		buttonCacheDirty = true
-		isMatchActive = false
-		if needsPetRefresh then
+		_slotCacheDirty = true
+		_buttonCacheDirty = true
+		_isMatchActive = false
+		if _needsPetRefresh then
 			C_Timer.After(1.0, function()
-				if needsPetRefresh then
+				if _needsPetRefresh then
 					AttemptPetRefresh()
 				end
 			end)
@@ -658,36 +658,36 @@ frame:SetScript("OnEvent", function(self, event, ...)
 	elseif event == "ACTIONBAR_SLOT_CHANGED" then
 		local slot = ...
 		if slot == 0 then
-			slotCacheDirty = true
-			buttonCacheDirty = true
+			_slotCacheDirty = true
+			_buttonCacheDirty = true
 			ScheduleUpdate()
 			return
 		end
 		local t, id = GetActionInfo(slot)
-		local old = slotCache[slot]
+		local old = _slotCache[slot]
 		local hadAction = old ~= nil
 		local hasAction = t ~= nil
 		local actionChanged = hadAction and hasAction and (old.type ~= t or old.id ~= id)
 		local changed = (hadAction ~= hasAction) or actionChanged
 		if not changed then return end
 		if t then
-			slotCache[slot] = { type = t, id = id }
+			_slotCache[slot] = { type = t, id = id }
 		else
-			slotCache[slot] = nil
+			_slotCache[slot] = nil
 		end
-		buttonCacheDirty = true
+		_buttonCacheDirty = true
 		ScheduleUpdate()
 	elseif event == "ACTIONBAR_PAGE_CHANGED" then
-		slotCacheDirty = true
-		buttonCacheDirty = true
+		_slotCacheDirty = true
+		_buttonCacheDirty = true
 		ScheduleUpdate()
 	elseif event == "CHALLENGE_MODE_START" then
-		isMatchActive = true
+		_isMatchActive = true
 		ClearGlows()
 	elseif event == "PVP_MATCH_ACTIVE" then
 		ScheduleUpdate()
 	elseif event == "CHALLENGE_MODE_COMPLETED" or event == "CHALLENGE_MODE_RESET" or event == "PVP_MATCH_COMPLETE" then
-		isMatchActive = false
+		_isMatchActive = false
 		ScheduleUpdate()
 	elseif event == "PVP_MATCH_STATE_CHANGED" or event == "ZONE_CHANGED_NEW_AREA" then
 		ScheduleUpdate()
@@ -702,10 +702,10 @@ frame:SetScript("OnEvent", function(self, event, ...)
 			if not IsRestrictedMode() then ScheduleUpdate() end
 		end)
 	elseif event == "PET_JOURNAL_LIST_UPDATE" then
-		if needsPetRefresh then
+		if _needsPetRefresh then
 			AttemptPetRefresh()
 		end
-		buttonCacheDirty = true
+		_buttonCacheDirty = true
 		ScheduleUpdate()
 	elseif event == "UNIT_AURA" then
 		local unit = ...
@@ -715,8 +715,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
 			ScheduleUpdateSlow()
 		end
 	elseif event == "ACTIVE_TALENT_GROUP_CHANGED" then
-		slotCacheDirty = true
-		buttonCacheDirty = true
+		_slotCacheDirty = true
+		_buttonCacheDirty = true
 		InitAutoCombatPet()
 		HookAllButtons()
 		ScheduleUpdate()
@@ -732,7 +732,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
 			ScheduleUpdateSlow()
 		end
 	elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then
-		buttonCacheDirty = true
+		_buttonCacheDirty = true
 		HookAllButtons()
 		ScheduleUpdate()
 	else
@@ -911,7 +911,7 @@ local function ShowStatus()
 	else
 		print("  |cff00ff00All good!|r")
 	end
-	if autoCombatPetSpellIDs then
+	if _autoCombatPetSpellIDs then
 		print("  Combat pet: |cff00ff00auto (enabled)|r")
 	end
 end
@@ -965,7 +965,7 @@ SlashCmdList["PREP"] = function(msg)
 		PrintHelp(); return
 	end
 
-	if itemSlots[cmd] then
+	if _itemSlots[cmd] then
 		if origArg == "" then
 			print("|cff00ccff[Prep]|r Usage: /prep " .. cmd .. " <item id, name, or link>"); return
 		end
@@ -973,11 +973,11 @@ SlashCmdList["PREP"] = function(msg)
 		if not id then
 			print("|cff00ccff[Prep]|r Item not found: |cffffff00" .. origArg .. "|r  (must be in bags)"); return
 		end
-		PrepDB[itemSlots[cmd]] = { itemID = id }
+		PrepDB[_itemSlots[cmd]] = { itemID = id }
 		local link = select(2, GetItemInfo(id)) or ("|cffffff00" .. (C_Item.GetItemNameByID(id) or tostring(id)) .. "|r")
 		local label = (cmd or ""):sub(1, 1):upper() .. (cmd or ""):sub(2)
 		print("|cff00ccff[Prep]|r " .. label .. " set to: " .. ItemIcon(id) .. link)
-		buttonCacheDirty = true
+		_buttonCacheDirty = true
 		ScheduleUpdate()
 	elseif cmd == "warncolor" then
 		origArg = origArg:gsub(",", " ")
@@ -1022,7 +1022,7 @@ SlashCmdList["PREP"] = function(msg)
 		PrepDB.slotBuff = { spellID = id }
 		local link = C_Spell.GetSpellLink(id) or ("|cffffff00" .. (C_Spell.GetSpellName(id) or tostring(id)) .. "|r")
 		print("|cff00ccff[Prep]|r Buff set to: " .. SpellIcon(id) .. link)
-		buttonCacheDirty = true
+		_buttonCacheDirty = true
 		ScheduleUpdate()
 	elseif cmd == "pet" then
 		if origArg == "" then
@@ -1035,14 +1035,14 @@ SlashCmdList["PREP"] = function(msg)
 		PrepDB.slotPet = { petGUID = guid, petName = origArg }
 		local petLink = C_PetJournal.GetBattlePetLink(guid) or ("|cffffff00" .. name .. "|r")
 		print("|cff00ccff[Prep]|r Pet set to: " .. PetIcon(guid) .. petLink)
-		buttonCacheDirty = true
+		_buttonCacheDirty = true
 		ScheduleUpdate()
 	elseif cmd == "clear" then
 		local k = "slot" .. arg:sub(1, 1):upper() .. arg:sub(2)
 		if PrepDB[k] ~= nil then
 			PrepDB[k] = nil
 			print("|cff00ccff[Prep]|r Cleared: " .. arg)
-			buttonCacheDirty = true
+			_buttonCacheDirty = true
 			ScheduleUpdate()
 		else
 			print("|cff00ccff[Prep]|r Unknown slot: " .. arg .. "  (buff/food/weapon/flask/rune/pet)")
@@ -1050,9 +1050,9 @@ SlashCmdList["PREP"] = function(msg)
 	elseif cmd == "reset" then
 		ClearGlows()
 		wipe(PrepDB)
-		for k, v in pairs(defaults) do PrepDB[k] = v end
-		slotCacheDirty = true
-		buttonCacheDirty = true
+		for k, v in pairs(_defaults) do PrepDB[k] = v end
+		_slotCacheDirty = true
+		_buttonCacheDirty = true
 		C_Timer.After(0.2, function()
 			ScheduleUpdate(); ShowStatus()
 		end)

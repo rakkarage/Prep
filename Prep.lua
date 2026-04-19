@@ -332,7 +332,7 @@ local function FindCombatPetButton()
 	if not autoCombatPetSpellIDs or #autoCombatPetSpellIDs == 0 then return nil end
 	for s = 1, NUM_BUTTONS do
 		local t, id = GetCachedActionInfo(s)
-		local spellID = (t == "spell" and id) or (t == "macro" and GetMacroSpellID(id)) or nil
+		local spellID = (t == "spell" and id) or (t == "macro" and GetMacroSpellID(id))
 		if spellID then
 			for _, sid in ipairs(autoCombatPetSpellIDs) do
 				if spellID == sid then
@@ -359,8 +359,7 @@ end
 
 local function GetCachedButton(key)
 	if buttonCacheDirty then RebuildButtonCache() end
-	local b = buttonCache[key]
-	return b ~= false and b or nil
+	return buttonCache[key] ~= false and buttonCache[key] or nil
 end
 
 local function FindPlayerHelpfulAuraByName(name)
@@ -384,12 +383,12 @@ local function GetSlotRemainingSeconds(key, s)
 	local aura = nil
 	if key == "slotBuff" and s.spellID then
 		local spellName = C_Spell.GetSpellName(s.spellID)
-		aura = spellName and FindPlayerHelpfulAuraByName(spellName) or nil
+		aura = spellName and FindPlayerHelpfulAuraByName(spellName)
 	elseif key == "slotFood" then
 		aura = FindFoodAura()
 	elseif key == "slotFlask" and s.itemID then
 		local itemName = C_Item.GetItemNameByID(s.itemID)
-		aura = itemName and FindPlayerHelpfulAuraByName(itemName) or nil
+		aura = itemName and FindPlayerHelpfulAuraByName(itemName)
 	elseif key == "slotRune" and s.itemID then
 		aura = FindRuneAuraByItemID(s.itemID)
 	end

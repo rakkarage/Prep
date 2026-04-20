@@ -6,7 +6,7 @@ local _frame = CreateFrame("Frame")
 
 local _defaults = {
 	group = true,
-	combat = false,
+	combat = true,
 	flashR = 1.0,
 	flashG = 0.3,
 	flashB = 0.3,

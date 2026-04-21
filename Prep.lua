@@ -111,7 +111,33 @@ local function GetMacroSpellID(macroID)
 	return nil
 end
 
+local function IsBonusBarSlot(slot)
+	return slot >= 121 and slot <= 144
+end
+
+local function IsSlotActiveForCurrentBar(slot)
+	if HasBonusActionBar() then
+		return IsBonusBarSlot(slot)
+	end
+	return not IsBonusBarSlot(slot)
+end
+
+local function GetPrimaryBarButtonForBonusSlot(slot)
+	local buttonIndex
+	if slot >= 121 and slot <= 132 then
+		buttonIndex = slot - 120
+	elseif slot >= 133 and slot <= 144 then
+		buttonIndex = slot - 132
+	end
+	if not buttonIndex then return nil end
+	local btn = _G["ActionButton" .. buttonIndex]
+	return btn and btn:IsVisible() and btn or nil
+end
+
 local function GetButtonForActionSlot(slot)
+	if IsBonusBarSlot(slot) then
+		return GetPrimaryBarButtonForBonusSlot(slot)
+	end
 	for _, r in ipairs(BAR_RANGES) do
 		if slot >= r[1] and slot <= r[2] then
 			local btn = _G[r[3] .. (slot + r[4])]
@@ -126,6 +152,7 @@ local function FindButtonForType(matchType, matchID)
 	local matchName = (matchType == "spell") and C_Spell.GetSpellName(matchID) or C_Item.GetItemNameByID(matchID)
 	if not matchName then return end
 
+	local fallbackBtn = nil
 	for s = 1, NUM_BUTTONS do
 		local t, id = GetCachedActionInfo(s)
 		if t then
@@ -155,22 +182,35 @@ local function FindButtonForType(matchType, matchID)
 
 			if found then
 				local btn = GetButtonForActionSlot(s)
-				if btn then return btn end
+				if btn then
+					if IsSlotActiveForCurrentBar(s) then
+						return btn
+					end
+					fallbackBtn = fallbackBtn or btn
+				end
 			end
 		end
 	end
+	return fallbackBtn
 end
 
 local function FindButton(slot)
 	if not slot then return nil end
 	if slot.petGUID then
+		local fallbackBtn = nil
 		for s = 1, NUM_BUTTONS do
 			local t, id = GetCachedActionInfo(s)
 			if t == "summonpet" and id == slot.petGUID then
 				local btn = GetButtonForActionSlot(s)
-				if btn then return btn end
+				if btn then
+					if IsSlotActiveForCurrentBar(s) then
+						return btn
+					end
+					fallbackBtn = fallbackBtn or btn
+				end
 			end
 		end
+		return fallbackBtn
 	elseif slot.spellID then
 		return FindButtonForType("spell", slot.spellID)
 	elseif slot.itemID then
@@ -330,6 +370,7 @@ local checks = {
 
 local function FindCombatPetButton()
 	if not _autoCombatPetSpellIDs or #_autoCombatPetSpellIDs == 0 then return nil end
+	local fallbackBtn = nil
 	for s = 1, NUM_BUTTONS do
 		local t, id = GetCachedActionInfo(s)
 		local spellID = (t == "spell" and id) or (t == "macro" and GetMacroSpellID(id))
@@ -337,11 +378,17 @@ local function FindCombatPetButton()
 			for _, sid in ipairs(_autoCombatPetSpellIDs) do
 				if spellID == sid then
 					local btn = GetButtonForActionSlot(s)
-					if btn then return btn end
+					if btn then
+						if IsSlotActiveForCurrentBar(s) then
+							return btn
+						end
+						fallbackBtn = fallbackBtn or btn
+					end
 				end
 			end
 		end
 	end
+	return fallbackBtn
 end
 
 local function RebuildButtonCache()

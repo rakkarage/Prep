@@ -4,7 +4,7 @@
 ## Author: rakkarage
 ## SavedVariablesPerCharacter: PrepDB
 ## IconTexture: Interface/Icons/ability_warrior_battleshout
-## Interface: 120001
+## Interface: 120005
 ## Version: v2026.4
 
 Prep.lua

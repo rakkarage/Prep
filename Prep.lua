@@ -91,16 +91,12 @@ local function GetCachedActionInfo(s)
 end
 
 local function IsRestrictedMode()
-	if _isMatchActive or
-		(C_PvP.GetActiveMatchState() == Enum.PvPMatchState.Engaged) or
-		(EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive()) or
-		(InCombatLockdown() and not PrepDB.combat) or
-		UnitIsDeadOrGhost("player") or
-		UnitOnTaxi("player")
-	then
-		return true
-	end
-	return false
+	return _isMatchActive
+		or (C_PvP.GetActiveMatchState() == Enum.PvPMatchState.Engaged)
+		or (EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive())
+		or (InCombatLockdown() and not PrepDB.combat)
+		or UnitIsDeadOrGhost("player")
+		or UnitOnTaxi("player")
 end
 
 local function GetMacroSpellID(macroID)

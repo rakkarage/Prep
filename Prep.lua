@@ -142,6 +142,201 @@ local function GetButtonForActionSlot(slot)
 	end
 end
 
+-- ── Aura helpers ──────────────────────────────────────────────────────────────
+
+local function FindPlayerHelpfulAura(matchFn)
+	local i = 1
+	while true do
+		local aura = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
+		if not aura then break end
+		if matchFn(aura) then return aura end
+		i = i + 1
+	end
+	return nil
+end
+
+local function FindPlayerHelpfulAuraByName(name)
+	if not name or name == "" then return nil end
+	return FindPlayerHelpfulAura(function(aura)
+		return aura.name and not issecretvalue(aura.name) and aura.name == name
+	end)
+end
+
+local function FindFoodAura()
+	return FindPlayerHelpfulAuraByName("Well Fed") or FindPlayerHelpfulAuraByName("Hearty Well Fed")
+end
+
+-- ── Group helpers ─────────────────────────────────────────────────────────────
+
+local function ShouldCheckGroupUnit(unit)
+	if not UnitExists(unit) or not UnitIsConnected(unit) or UnitIsDeadOrGhost(unit) then
+		return false
+	end
+
+	local inRange = UnitInRange(unit)
+	if issecretvalue(inRange) then
+		return false
+	end
+
+	return inRange
+end
+
+local function AllGroupMembersHaveAura(hasAura)
+	local n = GetNumGroupMembers()
+	if n == 0 then return true end
+
+	local pfx = IsInRaid() and "raid" or "party"
+	for i = 1, n do
+		local unit = pfx .. i
+		if ShouldCheckGroupUnit(unit) and not hasAura(unit) then
+			return false
+		end
+	end
+
+	return true
+end
+
+-- ── Buff/consumable checks ────────────────────────────────────────────────────
+
+local function GetRuneSearchTerm(itemID)
+	if not itemID then return nil end
+	local itemName = C_Item.GetItemNameByID(itemID)
+	if not itemName then return nil end
+	local searchTerm = itemName:lower():gsub("%s*%S+%s*$", ""):gsub("%s*%S+%s*$", "")
+	if searchTerm == "" then return nil end
+	return searchTerm
+end
+
+local function FindRuneAuraByItemID(itemID)
+	local searchTerm = GetRuneSearchTerm(itemID)
+	if not searchTerm then return nil end
+	return FindPlayerHelpfulAura(function(aura)
+		return aura.name and not issecretvalue(aura.name) and aura.name:lower():find(searchTerm, 1, true)
+	end)
+end
+
+local function HasRune()
+	if not PrepDB.slotRune or not PrepDB.slotRune.itemID then return true end
+	return FindRuneAuraByItemID(PrepDB.slotRune.itemID) ~= nil
+end
+
+local function HasAura(name, group)
+	if not FindPlayerHelpfulAuraByName(name) then return false end
+	if group then
+		return AllGroupMembersHaveAura(function(unit)
+			return AuraUtil.FindAuraByName(name, unit, "HELPFUL") ~= nil
+		end)
+	end
+	return true
+end
+
+local function HasFlask()
+	if not PrepDB.slotFlask or not PrepDB.slotFlask.itemID then return true end
+	local name = C_Item.GetItemNameByID(PrepDB.slotFlask.itemID)
+	if not name then return false end
+	return FindPlayerHelpfulAuraByName(name) ~= nil
+end
+
+local function IsWeaponInOffhand()
+	local ohItem = GetInventoryItemID("player", 17)
+	if not ohItem then return false end
+	local _, _, _, _, _, itemClassID = GetItemInfoInstant(ohItem)
+	return itemClassID == Enum.ItemClass.Weapon
+end
+
+local function GetRequiredWeaponEnchantRemainSeconds()
+	local hasMH, mhMs, _, _, hasOH, ohMs = GetWeaponEnchantInfo()
+	if not hasMH then return nil end
+
+	local minRemain = nil
+	if mhMs and mhMs > 0 then
+		minRemain = mhMs / 1000
+	end
+
+	if IsWeaponInOffhand() then
+		if not hasOH then return nil end
+		if ohMs and ohMs > 0 then
+			local ohRemain = ohMs / 1000
+			if not minRemain or ohRemain < minRemain then
+				minRemain = ohRemain
+			end
+		end
+	end
+
+	return minRemain
+end
+
+-- Each check function returns TRUE if the condition is MET (good), FALSE if MISSING (bad → glow).
+-- Only checks that are configured in the DB (e.g., PrepDB.slotFlask is set) will be evaluated.
+local checks = {
+	{
+		key = "slotBuff",
+		fn = function()
+			if not PrepDB.slotBuff or not PrepDB.slotBuff.spellID then return true end
+			local name = C_Spell.GetSpellName(PrepDB.slotBuff.spellID)
+			if not name then return true end
+			return HasAura(name, PrepDB.group)
+		end
+	},
+	{
+		key = "slotFood",
+		fn = function()
+			return FindPlayerHelpfulAuraByName("Well Fed") ~= nil
+				or FindPlayerHelpfulAuraByName("Hearty Well Fed") ~= nil
+		end
+	},
+	{
+		key = "slotWeapon",
+		fn = function()
+			return GetRequiredWeaponEnchantRemainSeconds() ~= nil
+		end
+	},
+	{ key = "slotFlask", fn = function() return HasFlask() end },
+	{ key = "slotRune",  fn = function() return HasRune() end },
+	{
+		key = "slotPet",
+		fn = function()
+			if not PrepDB.slotPet then return true end
+			if not PrepDB.slotPet.petGUID then return false end
+			local g = C_PetJournal.GetSummonedPetGUID()
+			return g ~= nil and g ~= "" and g == PrepDB.slotPet.petGUID
+		end
+	},
+}
+
+-- ── Duration helpers ──────────────────────────────────────────────────────────
+
+local function GetSlotRemainingSeconds(key, s)
+	if not s then return nil end
+
+	if key == "slotWeapon" then
+		return GetRequiredWeaponEnchantRemainSeconds()
+	end
+
+	local aura = nil
+	if key == "slotBuff" and s.spellID then
+		local spellName = C_Spell.GetSpellName(s.spellID)
+		aura = spellName and FindPlayerHelpfulAuraByName(spellName)
+	elseif key == "slotFood" then
+		aura = FindFoodAura()
+	elseif key == "slotFlask" and s.itemID then
+		local itemName = C_Item.GetItemNameByID(s.itemID)
+		aura = itemName and FindPlayerHelpfulAuraByName(itemName)
+	elseif key == "slotRune" and s.itemID then
+		aura = FindRuneAuraByItemID(s.itemID)
+	end
+
+	if not aura or not aura.expirationTime or aura.expirationTime <= 0 then return nil end
+	local remain = aura.expirationTime - GetTime()
+	if remain <= 0 then return nil end
+	return remain
+end
+
+local function IsExpiringSoon(key, s)
+	local remain = GetSlotRemainingSeconds(key, s)
+	return remain ~= nil and remain < EXPIRING_WARNING_THRESHOLD
+end
+
 -- ── Find button on bar ────────────────────────────────────────────────────────
 
 local function FindButtonForType(matchType, matchID)
@@ -215,154 +410,34 @@ local function FindButton(slot)
 	end
 end
 
--- ── Button cache ──────────────────────────────────────────────────────────────
+-- ── Auto combat pet (Hunter / Warlock / Death Knight) ─────────────────────────
 
-
--- Move checks and FindCombatPetButton here so no forward declaration is needed
-local function ShouldCheckGroupUnit(unit)
-	if not UnitExists(unit) or not UnitIsConnected(unit) or UnitIsDeadOrGhost(unit) then
-		return false
+local function InitAutoCombatPet()
+	local class = UnitClassBase("player")
+	local spellNames = COMBAT_PET_SPELLS[class]
+	if not spellNames then
+		_autoCombatPetSpellIDs = nil
+		return
 	end
-
-	local inRange = UnitInRange(unit)
-	if issecretvalue(inRange) then
-		return false
-	end
-
-	return inRange
-end
-
-local function AllGroupMembersHaveAura(hasAura)
-	local n = GetNumGroupMembers()
-	if n == 0 then return true end
-
-	local pfx = IsInRaid() and "raid" or "party"
-	for i = 1, n do
-		local unit = pfx .. i
-		if ShouldCheckGroupUnit(unit) and not hasAura(unit) then
-			return false
-		end
-	end
-
-	return true
-end
-
-local function FindPlayerHelpfulAura(matchFn)
-	local i = 1
-	while true do
-		local aura = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
-		if not aura then break end
-		if matchFn(aura) then return aura end
-		i = i + 1
-	end
-	return nil
-end
-
-local function GetRuneSearchTerm(itemID)
-	if not itemID then return nil end
-	local itemName = C_Item.GetItemNameByID(itemID)
-	if not itemName then return nil end
-	local searchTerm = itemName:lower():gsub("%s*%S+%s*$", ""):gsub("%s*%S+%s*$", "")
-	if searchTerm == "" then return nil end
-	return searchTerm
-end
-
-local function FindRuneAuraByItemID(itemID)
-	local searchTerm = GetRuneSearchTerm(itemID)
-	if not searchTerm then return nil end
-	return FindPlayerHelpfulAura(function(aura)
-		return aura.name and not issecretvalue(aura.name) and aura.name:lower():find(searchTerm, 1, true)
-	end)
-end
-
-local function HasRune()
-	if not PrepDB.slotRune or not PrepDB.slotRune.itemID then return true end
-	return FindRuneAuraByItemID(PrepDB.slotRune.itemID) ~= nil
-end
-
-local function HasAura(name, group)
-	if not AuraUtil.FindAuraByName(name, "player", "HELPFUL") then return false end
-	if group then
-		return AllGroupMembersHaveAura(function(unit)
-			return AuraUtil.FindAuraByName(name, unit, "HELPFUL") ~= nil
-		end)
-	end
-	return true
-end
-
-local function HasFlask()
-	if not PrepDB.slotFlask or not PrepDB.slotFlask.itemID then return true end
-	local name = C_Item.GetItemNameByID(PrepDB.slotFlask.itemID)
-	if not name then return false end
-	return AuraUtil.FindAuraByName(name, "player", "HELPFUL") ~= nil
-end
-
-local function IsWeaponInOffhand()
-	local ohItem = GetInventoryItemID("player", 17)
-	if not ohItem then return false end
-	local _, _, _, _, _, itemClassID = GetItemInfoInstant(ohItem)
-	return itemClassID == Enum.ItemClass.Weapon
-end
-
-local function GetRequiredWeaponEnchantRemainSeconds()
-	local hasMH, mhMs, _, _, hasOH, ohMs = GetWeaponEnchantInfo()
-	if not hasMH then return nil end
-
-	local minRemain = nil
-	if mhMs and mhMs > 0 then
-		minRemain = mhMs / 1000
-	end
-
-	if IsWeaponInOffhand() then
-		if not hasOH then return nil end
-		if ohMs and ohMs > 0 then
-			local ohRemain = ohMs / 1000
-			if not minRemain or ohRemain < minRemain then
-				minRemain = ohRemain
+	_autoCombatPetSpellIDs = {}
+	for _, name in ipairs(spellNames) do
+		local id = C_Spell.GetSpellIDForSpellIdentifier and C_Spell.GetSpellIDForSpellIdentifier(name)
+		if not id then
+			for i = 1, 1000 do
+				local info = C_SpellBook.GetSpellBookItemInfo(i, Enum.SpellBookSpellBank.Player)
+				if not info then break end
+				if info.spellID and C_Spell.GetSpellName(info.spellID) == name then
+					id = info.spellID; break
+				end
 			end
 		end
+		if id and id > 0 then
+			_autoCombatPetSpellIDs[#_autoCombatPetSpellIDs + 1] = id
+		end
 	end
-
-	return minRemain
 end
 
--- Each check function returns TRUE if the condition is MET (good), FALSE if MISSING (bad → glow).
--- Only checks that are configured in the DB (e.g., PrepDB.slotFlask is set) will be evaluated.
-local checks = {
-	{
-		key = "slotBuff",
-		fn = function()
-			if not PrepDB.slotBuff or not PrepDB.slotBuff.spellID then return true end
-			local name = C_Spell.GetSpellName(PrepDB.slotBuff.spellID)
-			if not name then return true end
-			return HasAura(name, PrepDB.group)
-		end
-	},
-	{
-		key = "slotFood",
-		fn = function()
-			return AuraUtil.FindAuraByName("Well Fed", "player", "HELPFUL") ~= nil
-				or AuraUtil.FindAuraByName("Hearty Well Fed", "player", "HELPFUL") ~= nil
-		end
-	},
-	{
-		key = "slotWeapon",
-		fn = function()
-			return GetRequiredWeaponEnchantRemainSeconds() ~= nil
-		end
-	},
-	{ key = "slotFlask", fn = function() return HasFlask() end },
-	{ key = "slotRune",  fn = function() return HasRune() end },
-	{
-		key = "slotPet",
-		fn = function()
-			if not PrepDB.slotPet then return true end
-			if not PrepDB.slotPet.petGUID then return false end
-			local g = C_PetJournal.GetSummonedPetGUID()
-			return g ~= nil and g ~= "" and g == PrepDB.slotPet.petGUID
-		end
-	},
-}
+-- ── Button cache ──────────────────────────────────────────────────────────────
 
 local function FindCombatPetButton()
 	if not _autoCombatPetSpellIDs or #_autoCombatPetSpellIDs == 0 then return nil end
@@ -403,75 +478,6 @@ end
 local function GetCachedButton(key)
 	if _buttonCacheDirty then RebuildButtonCache() end
 	return _buttonCache[key] ~= false and _buttonCache[key] or nil
-end
-
-local function FindPlayerHelpfulAuraByName(name)
-	if not name or name == "" then return nil end
-	return FindPlayerHelpfulAura(function(aura)
-		return aura.name and not issecretvalue(aura.name) and aura.name == name
-	end)
-end
-
-local function FindFoodAura()
-	return FindPlayerHelpfulAuraByName("Well Fed") or FindPlayerHelpfulAuraByName("Hearty Well Fed")
-end
-
-local function GetSlotRemainingSeconds(key, s)
-	if not s then return nil end
-
-	if key == "slotWeapon" then
-		return GetRequiredWeaponEnchantRemainSeconds()
-	end
-
-	local aura = nil
-	if key == "slotBuff" and s.spellID then
-		local spellName = C_Spell.GetSpellName(s.spellID)
-		aura = spellName and FindPlayerHelpfulAuraByName(spellName)
-	elseif key == "slotFood" then
-		aura = FindFoodAura()
-	elseif key == "slotFlask" and s.itemID then
-		local itemName = C_Item.GetItemNameByID(s.itemID)
-		aura = itemName and FindPlayerHelpfulAuraByName(itemName)
-	elseif key == "slotRune" and s.itemID then
-		aura = FindRuneAuraByItemID(s.itemID)
-	end
-
-	if not aura or not aura.expirationTime or aura.expirationTime <= 0 then return nil end
-	local remain = aura.expirationTime - GetTime()
-	if remain <= 0 then return nil end
-	return remain
-end
-
-local function IsExpiringSoon(key, s)
-	local remain = GetSlotRemainingSeconds(key, s)
-	return remain ~= nil and remain < EXPIRING_WARNING_THRESHOLD
-end
-
--- ── Auto combat pet (Hunter / Warlock / Death Knight) ─────────────────────────
-
-local function InitAutoCombatPet()
-	local class = UnitClassBase("player")
-	local spellNames = COMBAT_PET_SPELLS[class]
-	if not spellNames then
-		_autoCombatPetSpellIDs = nil
-		return
-	end
-	_autoCombatPetSpellIDs = {}
-	for _, name in ipairs(spellNames) do
-		local id = C_Spell.GetSpellIDForSpellIdentifier and C_Spell.GetSpellIDForSpellIdentifier(name)
-		if not id then
-			for i = 1, 1000 do
-				local info = C_SpellBook.GetSpellBookItemInfo(i, Enum.SpellBookSpellBank.Player)
-				if not info then break end
-				if info.spellID and C_Spell.GetSpellName(info.spellID) == name then
-					id = info.spellID; break
-				end
-			end
-		end
-		if id and id > 0 then
-			_autoCombatPetSpellIDs[#_autoCombatPetSpellIDs + 1] = id
-		end
-	end
 end
 
 -- ── Glow ──────────────────────────────────────────────────────────────────────
@@ -646,6 +652,8 @@ local function HookAllButtons()
 	end
 end
 
+-- ── Events ────────────────────────────────────────────────────────────────────
+
 _frame:RegisterEvent("ADDON_LOADED")
 _frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 _frame:RegisterEvent("CHALLENGE_MODE_START")
@@ -782,6 +790,8 @@ _frame:SetScript("OnEvent", function(self, event, ...)
 		ScheduleUpdate()
 	end
 end)
+
+-- ── Slash command helpers ─────────────────────────────────────────────────────
 
 local function FindSpellIDByName(search)
 	search = search:lower()
